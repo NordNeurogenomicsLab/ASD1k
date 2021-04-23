@@ -1,0 +1,759 @@
+---
+title: "ASD1k Massively Parallel Reporter Assay"
+subtitle: |
+  | Author list goes here: [Preprint title goes here](Preprint link goes here) 
+ 
+author: |
+  | Data analysis by:
+  | Karol Cichewicz, [email](kcichewicz@ucdavis.edu), [LinkedIn](https://www.linkedin.com/in/karol-cichewicz/), [Follow me on Twitter](https://twitter.com/karolcichewicz)
+  | Linda Su-Feher,
+  | [Nord Neurogenomics Lab website](https://nordlab.faculty.ucdavis.edu/), [Follow us on Twitter](https://twitter.com/NordLabUCD)
+  Raw data available at [GSEXXXXXX]()
+
+abstract: |
+  Abstract goes here
+  
+output:
+  html_document:
+    code_folding: hide
+    css: style.css
+    theme: spacelab
+    toc: true
+    toc_depth: 4
+    toc_float: true
+urlcolor: blue
+---
+
+# 1. In-silico PCR
+
+* **Objectives and notes**
+    + Original coordinates define the location of Single Nucleotide Variants (SNV), centered in an amplicon
+    + Run isPCR on GRCh38 genome to define amplicon START and END coordinates
+    + Verify primer design specificity
+    + Obtain amplicon sequence and calculate GC content
+
+```{r}
+
+# Global R markdown code chunk options
+knitr::opts_chunk$set(message=FALSE, 
+                      warning = FALSE, 
+                      error=FALSE, 
+                      echo=TRUE, 
+                      cache=TRUE, 
+                      fig.width = 7, fig.height = 6, 
+                      fig.align = 'left')
+```
+
+```{r setup, echo=FALSE}
+
+library(tidyverse)
+library(GGally)
+library(genefilter)
+library(reshape2)
+library(data.table)
+library(knitr)
+library(stringr)
+library(tidyverse)
+library(GGally)
+library(cowplot)
+
+
+# Previous working directory:
+# setwd("G:/Shared drives/Nord Lab - Data/SFRI00/ASD1000/ASD1KV5/Karol/")
+
+wd <- "G:/Shared drives/Nord Lab - Computational Projects/MPRA/ASD1k/"
+setwd(wd)
+
+#opts_knit$set(verbose = TRUE, root.dir = wd)
+
+```
+
+
+## 1.1 GRCh38 in-silico PCR summary
+- 1997 unique primers
+- 2086  isPCR results
+- 39 primer pairs with more than 1 predicted isPCR product.
+- 1958 primer pairs with only 1 isPCR product (Perfect_In_silico_specificity = TRUE)
+- 4 primer pairs without isPCR products
+- 2070 isPCR products with expected size range of 875:925, (Intended_interval = TRUE)
+- 2044 isPCR products within the expected chromosome (Intended_chr = TRUE)
+- 2040 isPCR products with expected product size and chromosome (Intended_amplicon = TRUE)
+
+
+```{r}
+# Reading in silico PCR results
+
+f_dir <- paste0(wd, "All_chrom_in_silico_PCR_files_GRCh38/")
+f_list <- list.files(f_dir)
+
+in_silico_list <- lapply(1:21, function(x) read.csv(paste0(f_dir, f_list[x]), header = TRUE))
+df_in_silico <- rbindlist(in_silico_list)
+
+#############
+
+df_in_silico$X <- NULL
+
+# Renaming columns to indicate their coordinate genome version 
+colnames(df_in_silico)[10] <- "Chr_GRCh38_pred"
+colnames(df_in_silico)[11] <- "Amplicon_Start_GRCh38"
+colnames(df_in_silico)[12] <- "Amplicon_End_GRCh38"
+colnames(df_in_silico)[13] <- "Amplicon_length_GRCh38"
+colnames(df_in_silico)[15] <- "Sequence_GRCh38"
+
+#head(df_in_silico[,1:14])
+#dim(df_in_silico)  # 2086 PCR products from 1964 primer pairs.
+
+# Flag amplicons with multiple PCR products
+# In silico PCR was run with maxProductSize = 1500 bp.
+# Most byproducts have much shorter lengths, making them likely to be packaged into viruses, which has a capacity of 900 bp. 
+# In silico prediction of longer products that may not be packaged into AAV due to length constraint may cause reduced efficiency of PCR amplification and decreased abundance of these amplicons. 
+# Conclusion: In-silico PCR confirmed high specificity of primer design, and viral packaging. 
+
+# There are 39 amplicons with more than 1 predicted in silico PCR product.
+df <- as.data.frame(table(df_in_silico$UNIQID))
+unspecific_PCR <- dplyr::filter(df, Freq > 1)  
+
+# Unspecific amplicons and their product sizes
+#as.data.frame(dplyr::filter(df_in_silico, UNIQID %in% unspecific_PCR$Var1)[,c("UNIQID", "Amplicon_length_GRCh38", "PCR_efficiency")])
+
+# A histogram of isPCR product lengths.
+p1 <- ggplot(df_in_silico, aes(x = Amplicon_length_GRCh38))+
+    geom_density()+
+    geom_vline(xintercept = median(na.omit(df_in_silico$Amplicon_length_GRCh38)), color = "red", linetype = 2)+
+    annotate("text", label = "median = 906 bp", x = 950, y = 0.05, size = 6, colour = "red")+
+    theme_bw()+
+    labs(title = "A histogram of all isPCR product lengths", x = "Amplicon lengths [bp]")+
+    theme(plot.title = element_text(hjust = 0.5))+
+    coord_cartesian(xlim = c(800, 1000))
+
+
+# A histogram of isPCR product lengths predicted as unspecific
+p2 <- ggplot(dplyr::filter(df_in_silico, UNIQID %in% unspecific_PCR$Var1), 
+       aes(x = Amplicon_length_GRCh38))+
+    geom_density()+
+    theme_bw()+
+    labs(title = "A histogram of unspecific isPCR product lengths", x = "Amplicon lengths [bp]")+
+    theme(plot.title = element_text(hjust = 0.5))
+```
+
+```{r, fig.width = 12, fig.height = 6, fig.cap="Histograms of isPCR products. (A) All isPCR products, n = 2086; (B) Unspecific isPCR products, n =  128; Unique primer pairs, n = 1997"}
+
+plot_grid(p1, p2, 
+          labels = c('A', 'B'), 
+          rel_widths = c(1.2, 1.2),
+          vjust = 1.5)
+
+```
+
+
+
+
+```{r}
+# Conclusions: 
+# 1. The majority of unspecific products have lengths compatible with AAV packaging
+# 2. There are two PCR products of 1450 bp, and one 78 bp
+
+# Defines Perfect_In_silico_specificity
+df_in_silico$Perfect_In_silico_specificity <- ifelse(df_in_silico$UNIQID %in% as.character(unspecific_PCR$Var1), FALSE, TRUE)
+
+
+# GC content calculation
+GC_cont <- function(x){
+  
+x <- toupper(x)
+num_g <- str_count(x, "G")
+num_c <- str_count(x, "C")
+gc_content <- (num_g + num_c) / str_length(x)
+gc_content
+
+}
+
+df_in_silico$GC_content <- GC_cont(df_in_silico$Sequence)
+
+
+# I'm flagging amplicons if they are intended products if they chromosomes match, and PCR product length is +/- 5 bp from the product predicted on hg19 genome. 
+
+# Fixing X chrom name and chrom class encoding to permit logical operations
+# The line below is an ugly hack.
+#df_in_silico$CHROMOSOME <- ifelse(is.na(as.numeric(df_in_silico$CHROMOSOME)), 23, as.numeric(df_in_silico$chr))
+#df_in_silico$Chr_GRCh38_pred <- as.numeric(df_in_silico$Chr_GRCh38_pred)
+#df_in_silico$chr <- as.numeric(df_in_silico$chr)
+
+# Removes 4 records lacking predicted PCR products.
+d <- na.omit(df_in_silico)
+
+#unique(setdiff(df_in_silico$UNIQID, d$UNIQID)) 
+#No PCR prod for: 
+# "1956_2_40385062_C_G_11869.p1", 
+# "408_16_78441213_C_G_12937.p1", 
+# "2712_3_68059361_A_C_13159.p1", 
+# "940_17_35098691_G_A_14586.p1"
+
+# This is different from STAR408, because we don't have product lengths in primer spreadsheet
+# Unlike the STAR408 project, in silico PCR is the only source of amplicon sequence length.
+# Start and End coordinates denounce SNVs, not amplicons.
+# Amplicons were designed to be ~900 bases. 
+
+# I called amplicons "Intended_interval" when they fall between 875 : 925.
+d$Intended_interval <- sapply(1:nrow(d), function(x) d$Amplicon_length_GRCh38[x] 
+       %in% c(875 : 925))
+
+# Extracting extra amplicons without predicted in silico PCR products
+no_PCR_amp <- dplyr::filter(df_in_silico, UNIQID %in% c("1956_2_40385062_C_G_11869.p1", "408_16_78441213_C_G_12937.p1", "2712_3_68059361_A_C_13159.p1", "940_17_35098691_G_A_14586.p1"))
+
+no_PCR_amp$Intended_interval <- NA
+
+# Adding amplicons lacking pred. PCR prod. to the full dataset
+d2 <- rbind(d, no_PCR_amp)  
+
+# Checks if the chrom number is as expected
+d2$Intended_chr <- d2$CHROMOSOME == d2$Chr_GRCh38_pred
+
+# Intended_amplicon has expected chr and intended interval
+# NOTE: consider renaming INtended_interval to Expected_isPCR_length
+d2$Intended_amplicon <- d2$Intended_chr & d2$Intended_interval
+
+#2086 - total number of amplicons
+#nrow(d2) 
+
+# 2040 -  amplicons meeting Intended_amplicon criteria
+#sum(na.omit(d2$Intended_amplicon))
+
+# 1997 - number of unique IDs
+# length(unique(d2$UNIQID))   
+
+# Conclusion: some amplicons have multiple isPCR products and match the Intended_amplicon criteria 
+
+#Manual inspection
+# 42 spurious amplicons
+#dim(dplyr::filter(d2,  Intended_amplicon == FALSE))
+
+# 42 PCR byproducts 
+PCR_byproducts <- dplyr::filter(d2,  Intended_amplicon == FALSE) 
+
+#unique(PCR_byproducts$UNIQID)  # 18 UNIQID in PCR_byproducts
+
+
+# For activity modeling I'll focus only on these with Perfect_In_silico_specificity
+isPCR <-  dplyr::filter(d2, Perfect_In_silico_specificity == TRUE)
+
+# There are 1958 of these amplicons. This is a good set I'll be using for lm modeling
+#nrow(isPCR)
+```
+
+
+
+# 2. Assay reproducibility
+
+* Amplicons were realigned to GRCh38 and processed by KC.
+* Read duplicates were removed prior to counting reads/amplicon. 
+* GRCh37 was used for primer design and my initial isPCR. 
+* Amplicon counts were generated for all ampicons ever made/used in the lab, which allows us to track potential contamination.
+* The V4 and V5 datasets refer to two biological replicates/ injections performed by JL. LSF determined good reproducibility between these two biological replicates in her initial analysis.
+
+
+```{r}
+#Let's load the V4 and V5 data. This code has been adapted from Linda Su-Feher analysis in 20200116_Combined_Analysis.R
+
+## load v4 + v5 data
+## dims: 2576 x 19-22
+
+data.v4 <- read.table("Amplicon_Counts/ASD1KV4_Combined_Amplicons_DupRem.txt", sep = "\t", header = T, quote = "")
+
+data.v5 <- read.table("Amplicon_Counts/ASD1KV5_Combined_Amplicons_DupRem.txt", sep = "\t", header = T, quote = "")
+
+```
+
+
+```{r}
+
+# The two bed files contain dictionaries between GRCh37 and GRCh38 SNV coordinates. I think this was done using Bioconductor liftOver
+
+# Combined_408_ASD30-1000_GRCh38_FORALLELES.bed contains the exact amplicon coordinates for STAR408, ASD30 and ASD100 libraries; and the 1700 bp guesstimates for the ASD1K library, extended 850 bp each direction from SNV coordinates.
+
+# Combined_408_ASD30-1000_GRCh38_unflanked.bed contains SNV coordinates for ASD1K
+
+# This is not necessary because GRCh37 coordinates were later estimated from isPCR (in_silico_expected_chr_GRCh37)
+
+d <- read.table("Coordinates/Combined_408_ASD30-1000_GRCh38_FORALLELES.bed")
+e <- read.table("Coordinates/Combined_408_ASD30-1000_GRCh38_unflanked.bed")
+
+# Examples of amplicon ID formats:
+# STAR408: "1_CACNA1C or 1UN_CACNA1C", "41_Epilepsy",  UN stands for unique or non-overlapping 
+# ASD70: "27_12303.p1_Amp", all have _Amp
+# ASD30: "1-13111.p1"  number - patient number p1 or s1
+# ASD1k: "1340_3_56717417_A_T_13043.s1"
+
+# A function annotating amplicons by library type
+lib_annotation <- function(x){  
+
+x$library <- ifelse(
+grepl("^\\d+(UN)?_[A-Za-z0-9]+$", x$V4, perl=TRUE), "STAR408", "")
+
+x$library <- ifelse(
+grepl("_Control_", x$V4, perl=TRUE), "STAR408", x$library)
+
+x$library <- ifelse(
+grepl("^.*_Amp$", x$V4, perl = TRUE), "ASD70", x$library)
+
+x$library <- ifelse(
+grepl("^\\d+-\\d+.[sp]1$", x$V4, perl = TRUE), "ASD30", x$library)
+
+x$library <- ifelse(
+grepl("^\\d+_\\d+_\\d+_([ATCG]*)_([ATCG]*)_\\d+.(\\w)\\d$", x$V4, perl = TRUE), "ASD1k", x$library)
+
+colnames(x) <- c("Chr", "START_GRCh38", "END_GRCh38", "UNIQID", "Library")
+
+x
+}
+
+#dim(d)
+#dim(e) # e has 20 more rows
+
+d <- lib_annotation(d)
+e <- lib_annotation(e)
+
+# These are the two missing ASD1k amplicons in d: 
+# "931_1_144520557_G_A_14547.p1"
+# "2573_9_69219445_T_C_11218.p1"
+#setdiff(e$UNIQID, d$UNIQID) 
+#setdiff(d$UNIQID, e$UNIQID)
+
+#length(e$UNIQID) #2596
+#length(d$UNIQID) #2576
+
+#length(unique(e$UNIQID)) # 2578 There are some duplicated UNIQIDs in e
+#length(unique(d$UNIQID)) # 2576
+
+#nrow(filter(e, Library == "ASD1k")) # 1996
+#nrow(filter(d, Library == "ASD1k")) # 1994
+
+# Reading in silico PCR GRCh37 from pre-defined chromosomes data - DEPRICATED, delete
+# Pre defined chromosomes refers to running isPCR only against a the expected chromosome. 
+#in_silico_expected_chr_GRCh37 <- read.csv("G:/Shared drives/Nord Lab - Data/SFRI00/ASD1000/ASD1KV5/Karol/In_silico_PCR/Pre_defined_chrom_in_silico_PCR_GRCh37/Amplicons_w_edge_coordinates_and_seq_pre_def_chrom_GRCh37_1_to_1997.csv")
+
+
+# There are 1997 unique IDs, but even this chrom pre-determined algorithm found some off target products
+#length(unique(df_in_silico$UNIQID))  # 1997
+#length((df_in_silico$UNIQID))        # 2086
+#
+# one missing in the e object
+#setdiff(unique(df_in_silico$UNIQID), filter(e, Library == "ASD1k")$UNIQID) #"1576_19_40388570_G_A_14009.s1" is missing
+#filter(df_in_silico, UNIQID == "1576_19_40388570_G_A_14009.s1") # This amplicon is predicted to have a product.
+
+```
+
+
+```{r}
+
+# Below is Linda's code from 20200116_Combined_Analysis.R
+# It indicates good reproducibility between the V4 and V5 replicates. 
+# I modified it adding a filtering step for low represented amplicons with less than 100 counts across DNA samples
+
+## merge data: 2576 x 40
+data.merge <- merge(data.v5, data.v4, by = "Amplicon")
+data.merge$Undetermined_S0.x <- NULL
+data.merge$Undetermined_S0.y <- NULL
+
+# NOTE - add filtering column instead of hard thresholding - consider at later stage in the analysis
+# Filtering out amplicons with less than 100 reads at DNA level 
+# data.merge <- data.merge[rowSums(data.merge[,grepl("AKg",colnames(data.merge))]) > 100,] # down to 1197 
+# Removing all non ASD1k amplicons which may increase the consistency between the V4 and V5 replicates.
+
+
+## Add some colors to check for contamination 
+data.merge <- merge(data.merge, d[,c("UNIQID", "Library")], by.x = "Amplicon", by.y = "UNIQID")
+data.merge_ASD1k <- dplyr::filter(data.merge, Library == "ASD1k")
+
+data.merge$Library <- NULL
+data.merge_ASD1k$Library <- NULL
+
+# Calculate proportion
+amp.prop <- data.merge_ASD1k
+rownames(amp.prop) <- amp.prop$Amplicon
+amp.prop$Amplicon <- NULL
+samples <- colnames(amp.prop)
+
+# Proportion function here: (x+1)/(sum(x)+1)  # +1 is padding
+## KC: again, the coding practive below is really bad.
+amp.prop <- as.data.frame(apply(amp.prop, 2, function(x) { (x+1)/(sum(x, na.rm = T)+1) }))
+amp.prop$Amplicon <- rownames(amp.prop)
+amp.prop.plot <- amp.prop
+#dim(amp.prop.plot)
+
+```
+
+
+## 2.1 Proportion correlations -  1994 amplicons
+
+### 2.1.1 DNA linear
+```{r, fig.width = 10, fig.height = 8, cache=TRUE}
+# GGpairs diagnostic plots
+setwd(wd)
+
+# Proportiona DNA
+p1 <- ggpairs(amp.prop.plot[, grepl("Kg|Kv", colnames(amp.prop.plot))], 
+      lower = list(continuous = wrap("points", size = 0.5, alpha = 0.2, pch = 16), 
+                   combo = "box", discrete = "blank", na = "na"),
+      diag = list(discrete = "blankDiag", continuous = wrap("densityDiag", alpha = 0.4), na = "blankDiag"), 
+      upper = list(continuous = wrap('cor', size = 3)))+ 
+      theme_bw()+ 
+      theme(panel.grid.major = element_blank(), 
+            panel.grid.minor = element_blank(), 
+            text = element_text(size = 8), 
+            axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5))
+
+p1
+
+```
+
+### 2.1.2 DNA log2
+```{r, fig.width = 10, fig.height = 8, cache=TRUE}
+# Proportion log2 DNA
+p2 <- ggpairs(log2(amp.prop.plot[, grepl("Kg|Kv", colnames(amp.prop.plot))]), 
+      lower = list(continuous = wrap("points", size = 0.5, alpha = 0.2, pch = 16), 
+                   combo = "box", discrete = "blank", na = "na"),
+      diag = list(discrete = "blankDiag", continuous = wrap("densityDiag", alpha = 0.4), na = "blankDiag"), 
+      upper = list(continuous = wrap('cor', size = 3)))+ 
+      theme_bw()+ 
+      theme(panel.grid.major = element_blank(), 
+            panel.grid.minor = element_blank(), 
+            text = element_text(size = 8), 
+            axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5))
+
+p2
+
+
+```
+
+### 2.1.3 RNA linear
+```{r, fig.width = 12, fig.height = 12, cache=TRUE}
+# GGpairs diagnostic plots
+setwd(wd)
+
+# Proportiona DNA
+p3 <- ggpairs(amp.prop.plot[, grepl("Ko|Ks", colnames(amp.prop.plot))], 
+      lower = list(continuous = wrap("points", size = 0.5, alpha = 0.2, pch = 16), 
+                   combo = "box", discrete = "blank", na = "na"),
+      diag = list(discrete = "blankDiag", continuous = wrap("densityDiag", alpha = 0.4), na = "blankDiag"), 
+      upper = list(continuous = wrap('cor', size = 3)))+ 
+      theme_bw()+ 
+      theme(panel.grid.major = element_blank(), 
+            panel.grid.minor = element_blank(), 
+            text = element_text(size = 8), 
+            axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5))
+
+p3
+
+```
+
+### 2.1.4 RNA log2
+```{r, fig.width = 12, fig.height = 12, cache=TRUE}
+# GGpairs diagnostic plots
+setwd(wd)
+
+# Proportiona DNA
+p4 <- ggpairs(log2(amp.prop.plot[, grepl("Ko|Ks", colnames(amp.prop.plot))]), 
+      lower = list(continuous = wrap("points", size = 0.5, alpha = 0.2, pch = 16), 
+                   combo = "box", discrete = "blank", na = "na"),
+      diag = list(discrete = "blankDiag", continuous = wrap("densityDiag", alpha = 0.4), na = "blankDiag"), 
+      upper = list(continuous = wrap('cor', size = 3)))+ 
+      theme_bw()+ 
+      theme(panel.grid.major = element_blank(), 
+            panel.grid.minor = element_blank(), 
+            text = element_text(size = 8), 
+            axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5))
+
+p4
+
+```
+
+
+# 3. Ratiometric activity
+
+```{r, fig.width = 12, fig.height = 12, cache=TRUE}
+## Manually calculate ratiometric activity (RNA/DNA)
+amp.act <- data.frame("amp_id" = rownames(amp.prop.plot), "Color" = "ASD1k",
+                      "Ratio.V5.S.54" = 0, "Ratio.V5.S.55" = 0, "Ratio.V5.S.55b" = 0, "Ratio.V5.S.55c" = 0, 
+                      "Ratio.V5.S.56" = 0, "Ratio.V5.S.56b" = 0, "Ratio.V5.S.56c" = 0, "Ratio.V5.S.57" = 0, 
+                      "Ratio.V5.S.69" = 0, "Ratio.V5.S.70" = 0, "Ratio.V5.S.71" = 0, "Ratio.V5.S.71b" = 0, "Ratio.V5.S.71c" = 0, 
+                      "Ratio.V4.O.49" = 0, "Ratio.V4.O.50" = 0, "Ratio.V4.O.51" = 0, "Ratio.V4.O.52" = 0, "Ratio.V4.O.53" = 0, 
+                      "Ratio.V4.S.49" = 0, "Ratio.V4.S.50" = 0, "Ratio.V4.S.51" = 0, "Ratio.V4.S.52" = 0, "Ratio.V4.S.53" = 0
+                      )
+
+## manually define ratiometric activity for V5
+amp.act$Ratio.V5.S.54 <- (amp.prop.plot$AKs54_S90) / (amp.prop.plot$AKg54_S83)
+amp.act$Ratio.V5.S.55 <- (amp.prop.plot$AKs55_S91) / (amp.prop.plot$AKg55_S84)
+amp.act$Ratio.V5.S.55b <- (amp.prop.plot$AKs55b_S97) / (amp.prop.plot$AKg55_S84)
+amp.act$Ratio.V5.S.55c <- (amp.prop.plot$AKs55c_S100) / (amp.prop.plot$AKg55_S84)
+amp.act$Ratio.V5.S.56 <- (amp.prop.plot$AKs56_S92) / (amp.prop.plot$AKg56_S85)
+amp.act$Ratio.V5.S.56b <- (amp.prop.plot$AKs56b_S98) / (amp.prop.plot$AKg56_S85)
+amp.act$Ratio.V5.S.56c <- (amp.prop.plot$AKs56c_S101) / (amp.prop.plot$AKg56_S85)
+amp.act$Ratio.V5.S.57 <- (amp.prop.plot$AKs57_S93) / (amp.prop.plot$AKg57_S86)
+amp.act$Ratio.V5.S.69 <- (amp.prop.plot$AKs69_S94) / (amp.prop.plot$AKg69_S87)
+amp.act$Ratio.V5.S.70 <- (amp.prop.plot$AKs70_S95) / (amp.prop.plot$AKg70_S88)
+amp.act$Ratio.V5.S.71 <- (amp.prop.plot$AKs71_S96) / (amp.prop.plot$AKg71_S89)
+amp.act$Ratio.V5.S.71b <- (amp.prop.plot$AKs71b_S99) / (amp.prop.plot$AKg71_S89)
+amp.act$Ratio.V5.S.71c <- (amp.prop.plot$AKs71c_S102) / (amp.prop.plot$AKg71_S89)
+
+## manually define ratiometric activity for V4
+amp.act$Ratio.V4.O.49 <- (amp.prop.plot$AKo49_S50) / (amp.prop.plot$AKg49_S40)
+amp.act$Ratio.V4.O.50 <- (amp.prop.plot$AKo50_S51) / (amp.prop.plot$AKg50_S41)
+amp.act$Ratio.V4.O.51 <- (amp.prop.plot$AKo51_S52) / (amp.prop.plot$AKg51_S42)
+amp.act$Ratio.V4.O.52 <- (amp.prop.plot$AKo52_S53) / (amp.prop.plot$AKg52_S43)
+amp.act$Ratio.V4.O.53 <- (amp.prop.plot$AKo53_S54) / (amp.prop.plot$AKg53_S44)
+amp.act$Ratio.V4.S.49 <- (amp.prop.plot$AKs49_S45) / (amp.prop.plot$AKg49_S40)
+amp.act$Ratio.V4.S.50 <- (amp.prop.plot$AKs50_S46) / (amp.prop.plot$AKg50_S41)
+amp.act$Ratio.V4.S.51 <- (amp.prop.plot$AKs51_S47) / (amp.prop.plot$AKg51_S42)
+amp.act$Ratio.V4.S.52 <- (amp.prop.plot$AKs52_S48) / (amp.prop.plot$AKg52_S43)
+amp.act$Ratio.V4.S.53 <- (amp.prop.plot$AKs53_S49) / (amp.prop.plot$AKg53_S44)
+
+```
+
+## 3.1 Correlation plots - 1994 amplicons
+
+### 3.1.1 log2
+```{r, fig.width = 12, fig.height = 12, cache=TRUE}
+# Activity sample corelation plots 
+## Linear
+p <- ggpairs(log2(amp.act[, grepl("Ratio", colnames(amp.act))]), 
+             lower = list(continuous = wrap("points", size = 0.5, alpha = 0.2, pch = 1), 
+                          combo = "box", discrete = "blank", na = "na"),
+             diag = list(discrete = "blankDiag", continuous = wrap("densityDiag", alpha = 0.4), 
+                         na = "blankDiag"), 
+             upper = list(continuous = wrap('cor', size = 3))) + 
+             theme_bw()+ 
+             theme(panel.grid.major = element_blank(), 
+                   panel.grid.minor = element_blank(), 
+                   text = element_text(size = 10), 
+                   axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5))
+
+p
+
+```
+
+# 4. Mean ratiometric activity and proportions
+```{r}
+
+#Activity Mean and SD
+library(genefilter)
+library(reshape2)
+library(data.table)
+
+amp.act_summary <- amp.act[,1:2]
+
+amp.act_summary$Mean_V5 <- rowMeans(amp.act[,c(3:15)])
+amp.act_summary$Mean_V4 <- rowMeans(amp.act[,c(16:25)])
+amp.act_summary$Mean_V4.O <- rowMeans(amp.act[,c(16:20)])
+amp.act_summary$Mean_V4.S <- rowMeans(amp.act[,c(21:20)])
+amp.act_summary$Mean_All <- rowMeans(amp.act[,c(3:25)])
+
+amp.act_summary$SD_V5 <- rowSds(as.matrix(amp.act[,c(3:15)]))
+amp.act_summary$SD_V4 <- rowSds(as.matrix(amp.act[,c(16:25)]))
+amp.act_summary$SD_V4.O <- rowSds(as.matrix(amp.act[,c(16:20)]))
+amp.act_summary$SD_V4.S <- rowSds(as.matrix(amp.act[,c(21:20)]))
+amp.act_summary$SD_All <- rowSds(as.matrix(amp.act[,c(3:25)]))
+
+
+
+# Proportions
+#
+#colnames(amp.prop.plot)
+#colnames(data.v4)
+#colnames(data.v5)
+
+#Let's construct a proper metadata df
+metadata <- data.frame("Sample_name" = c(colnames(data.v4)[2:18], colnames(data.v5)[2:21]))
+metadata$Replicate <- ifelse(metadata$Sample_name %in% colnames(data.v4)[2:18], "V4", "V5")
+
+class_of_nucleic_acid <- ifelse(grepl("AKg", metadata$Sample_name), "gDNA", NA)
+class_of_nucleic_acid <- ifelse(grepl("AKs|AKo", metadata$Sample_name), "cDNA", class_of_nucleic_acid)
+class_of_nucleic_acid <- ifelse(grepl("AKv", metadata$Sample_name), "virus", class_of_nucleic_acid)
+
+metadata$Nucleic_acid <- class_of_nucleic_acid
+
+V4_gDNA_samples <- dplyr::filter(metadata, Replicate == "V4", Nucleic_acid == "gDNA")$Sample_name
+V4_cDNA_samples <- dplyr::filter(metadata, Replicate == "V4", Nucleic_acid == "cDNA")$Sample_name
+V5_gDNA_samples <- dplyr::filter(metadata, Replicate == "V5", Nucleic_acid == "gDNA")$Sample_name
+V5_cDNA_samples <- dplyr::filter(metadata, Replicate == "V5", Nucleic_acid == "cDNA")$Sample_name
+
+gDNA_samples <- dplyr::filter(metadata, Nucleic_acid == "gDNA")$Sample_name
+cDNA_samples <- dplyr::filter(metadata, Nucleic_acid == "cDNA")$Sample_name
+
+
+amp.prop.plot$Color <- "ASD1k"
+
+amp.prop_summary <- amp.prop.plot[,c("Amplicon", "Color")]
+rownames(amp.prop_summary) <- NULL
+
+#head(amp.prop_summary)
+
+
+amp.prop_summary$Mean_gDNA <- rowMeans(amp.prop.plot[,gDNA_samples])
+amp.prop_summary$Mean_cDNA <- rowMeans(amp.prop.plot[,cDNA_samples])
+amp.prop_summary$Mean_gDNA_V4 <- rowMeans(amp.prop.plot[,V4_gDNA_samples])
+amp.prop_summary$Mean_cDNA_V4 <- rowMeans(amp.prop.plot[,V4_cDNA_samples])
+amp.prop_summary$Mean_gDNA_V5 <- rowMeans(amp.prop.plot[,V5_gDNA_samples])
+amp.prop_summary$Mean_cDNA_V5 <- rowMeans(amp.prop.plot[,V5_cDNA_samples])
+
+amp.prop_summary$SD_gDNA <- rowSds(amp.prop.plot[,gDNA_samples])
+amp.prop_summary$SD_cDNA <- as.numeric(rowSds(amp.prop.plot[,cDNA_samples]))
+amp.prop_summary$SD_gDNA_V4 <- as.numeric(rowSds(amp.prop.plot[,V4_gDNA_samples]))
+amp.prop_summary$SD_cDNA_V4 <- as.numeric(rowSds(amp.prop.plot[,V4_cDNA_samples]))
+amp.prop_summary$SD_gDNA_V5 <- as.numeric(rowSds(amp.prop.plot[,V5_gDNA_samples]))
+amp.prop_summary$SD_cDNA_V5 <- as.numeric(rowSds(amp.prop.plot[,V5_cDNA_samples]))
+
+
+# Applying a threshold on proportions
+amp.prop_summary$Pass_prop_gDNA_and_cDNA <- ifelse(amp.prop_summary$Mean_gDNA > 2^-15 & 
+                                                     amp.prop_summary$Mean_cDNA > 2^-15, TRUE, FALSE)
+
+
+## Add Boolean columns denoting min count tests
+ min_count = 100
+ min_count_gDNA <- rowSums(data.merge[,gDNA_samples]>min_count) >= ncol(data.merge[,gDNA_samples])
+ min_count_gDNA_V4 <- rowSums(data.merge[,V4_gDNA_samples]>min_count) >= ncol(data.merge[,V4_gDNA_samples])
+ min_count_gDNA_V5 <- rowSums(data.merge[,V5_gDNA_samples]>min_count) >= ncol(data.merge[,V5_gDNA_samples])
+ 
+ min_count_cDNA <- rowSums(data.merge[,cDNA_samples]>min_count) >= ncol(data.merge[,cDNA_samples])
+ min_count_cDNA_V4 <- rowSums(data.merge[,V4_cDNA_samples]>min_count) >= ncol(data.merge[,V4_cDNA_samples])
+ min_count_cDNA_V5 <- rowSums(data.merge[,V5_cDNA_samples]>min_count) >= ncol(data.merge[,V5_cDNA_samples])
+ 
+ count_Booleans <- data.frame(
+   "Amplicon" = data.merge$Amplicon,
+   "min_count_gDNA" = min_count_gDNA,
+   "min_count_gDNA_V4" = min_count_gDNA_V4,
+   "min_count_gDNA_V5" =  min_count_gDNA_V5,
+   
+   "min_count_cDNA" = min_count_cDNA,
+   "min_count_cDNA_V4" = min_count_cDNA_V4,
+   "min_count_cDNA_V5" =  min_count_cDNA_V5
+ )
+
+ 
+# Building a comprehensive data frame
+ y <- merge(amp.prop_summary, count_Booleans, by = "Amplicon") # 1994 rows, Only ASD1k amplicons
+ 
+ y_ASD1k <- dplyr::filter(y, Color == "ASD1k") # 1994 rows
+ 
+```
+
+
+```{r, fig.width = 12, fig.height = 12}
+
+library(ggplot2)
+library(genefilter)
+library(ggpmisc)
+
+# A rectangle delinating DNA and RNA proportion thresholds < 2^-15
+d=data.frame(x1=c(-Inf, -Inf), x2=c(+Inf, -15), y1=c(-Inf,-15), y2=c(-15, +Inf))
+
+
+# Passing min gDNA counts on all samples
+p1 <- ggplot()+
+  geom_point(data = y_ASD1k, aes(x = log2(Mean_gDNA), 
+                                 y = log2(Mean_cDNA), 
+                                 color = min_count_gDNA), alpha = 0.3)+
+  theme_bw()+
+  geom_rect(data=d, mapping=aes(xmin=x1, xmax=x2, ymin=y1, ymax=y2), color=NA, alpha=0.3)+
+  labs(title = "Amplicons with > 100 counts in all DNA")+
+  theme(plot.title = element_text(hjust = 0.5),
+        legend.position="bottom")
+
+
+p2 <- ggplot()+
+  geom_point(data = y_ASD1k, aes(x = log2(Mean_gDNA), y = log2(Mean_cDNA), 
+                                 color = min_count_gDNA_V4), alpha = 0.3)+
+  theme_bw()+
+  geom_rect(data=d, mapping=aes(xmin=x1, xmax=x2, ymin=y1, ymax=y2), color=NA, alpha=0.3)+
+  labs(title = "Amplicons with > 100 counts in V4 replicate DNA")+
+  theme(plot.title = element_text(hjust = 0.5),
+        legend.position="bottom")
+
+
+
+p3 <- ggplot()+
+  geom_point(data = y_ASD1k, aes(x = log2(Mean_gDNA), y = log2(Mean_cDNA), 
+                                 color = min_count_gDNA_V5), alpha = 0.3)+
+  theme_bw()+
+  geom_rect(data=d, mapping=aes(xmin=x1, xmax=x2, ymin=y1, ymax=y2), color=NA, alpha=0.3)+
+  labs(title = "Amplicons with > 100 counts in V5 replicate DNA")+
+  theme(plot.title = element_text(hjust = 0.5),
+        legend.position="bottom")
+
+
+
+
+
+# Passing min gDNA counts on all samples
+y$min_count_gDNA_and_cDNA <- y$min_count_cDNA & y$min_count_gDNA
+y_ASD1k$min_count_gDNA_and_cDNA <- y_ASD1k$min_count_cDNA & y_ASD1k$min_count_gDNA
+
+p4 <- ggplot()+
+  geom_point(data = y_ASD1k, aes(x = log2(Mean_gDNA), y = log2(Mean_cDNA), 
+                                 color = min_count_gDNA_and_cDNA), alpha = 0.3)+
+  theme_bw()+
+  geom_rect(data=d, mapping=aes(xmin=x1, xmax=x2, ymin=y1, ymax=y2), color=NA, alpha=0.3)+
+  labs(title = "Amplicons with > 100 counts in DNA and RNA samples")+
+  theme(plot.title = element_text(hjust = 0.5),
+        legend.position="bottom")
+
+
+plot_grid(p1, p2, p3, p4, 
+          labels = c("A", "B", "C", "D"), 
+          rel_widths = c(1.2, 1.2),
+          vjust = 0.9)
+
+
+```
+
+```{r, fig.width = 12, fig.height = 6}
+### Dataset for lm ###
+# Filtering criteria:
+#  1. > 100 reads across all gDNA samples, and > 100 across all cDNA samples
+#  2. Mean gDNA proportions and mean cDNA proportions > 2^-15
+
+y$lm_dataset <- y$min_count_gDNA_and_cDNA & y$Pass_prop_gDNA_and_cDNA
+y_ASD1k$lm_dataset <- y_ASD1k$min_count_gDNA_and_cDNA & y_ASD1k$Pass_prop_gDNA_and_cDNA
+
+p1 <- ggplot()+
+  geom_point(data = y_ASD1k, aes(x = log2(Mean_gDNA), y = log2(Mean_cDNA), color = lm_dataset), alpha = 0.3)+
+  theme_bw()+
+  geom_rect(data=d, mapping=aes(xmin=x1, xmax=x2, ymin=y1, ymax=y2), color=NA, alpha=0.3)+
+  labs(title = "Dataset cleaning for building the lm model")+
+  theme(plot.title = element_text(hjust = 0.5),
+        legend.position="bottom")
+
+
+
+## plotting lm dataset ##
+y_ASD1k_lm <- dplyr::filter(y_ASD1k, lm_dataset == TRUE)
+
+formula <- y ~ x
+
+p2 <- ggplot(y_ASD1k_lm, aes(x = log2(Mean_gDNA), y = log2(Mean_cDNA)))+
+  geom_point(alpha = 0.3)+
+  theme_bw()+
+  geom_abline(intercept = 0, color = "red", linetype = 2)+
+  geom_smooth(formula = formula, method = 'lm', color = "black")+
+  stat_poly_eq(formula = formula, 
+                aes(label = paste(..rr.label.., ..eq.label.., sep = "~~~")), 
+                parse = TRUE)+
+ labs(title = "Simple lm fit to the cleaned data, n = 748 amplicons ")+
+  theme(plot.title = element_text(hjust = 0.5),
+        legend.position="bottom")
+
+
+plot_grid(p1, p2,
+          labels = c("A", "B"), 
+          rel_widths = c(1.2, 1.2),
+          vjust = 0.9)
+
+
+
+# save.image("G:/Shared drives/Nord Lab - Data/SFRI00/ASD1000/ASD1KV5/Karol/ASD1k_lm_10_07_2020.RData")
+# load("G:/Shared drives/Nord Lab - Data/SFRI00/ASD1000/ASD1KV5/Karol/ASD1k_lm_10_07_2020.RData")
+# setwd("G:/Shared drives/Nord Lab - Data/SFRI00/ASD1000/ASD1KV5/Karol/")
+
+
+```
