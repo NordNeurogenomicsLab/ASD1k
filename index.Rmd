@@ -739,8 +739,8 @@ p2 <- ggplot(y_ASD1k_lm, aes(x = log2(Mean_gDNA), y = log2(Mean_cDNA)))+
   stat_poly_eq(formula = formula, 
                 aes(label = paste(..rr.label.., ..eq.label.., sep = "~~~")), 
                 parse = TRUE)+
- labs(title = "Simple lm fit to the cleaned data, n = 748 amplicons ")+
-  theme(plot.title = element_text(hjust = 0.5),
+ labs(title = "Simple lm fit to the cleaned data, n = 748 amplicons")+
+ theme(plot.title = element_text(hjust = 0.5),
         legend.position="bottom")
 
 
@@ -754,6 +754,49 @@ plot_grid(p1, p2,
 # save.image("G:/Shared drives/Nord Lab - Data/SFRI00/ASD1000/ASD1KV5/Karol/ASD1k_lm_10_07_2020.RData")
 # load("G:/Shared drives/Nord Lab - Data/SFRI00/ASD1000/ASD1KV5/Karol/ASD1k_lm_10_07_2020.RData")
 # setwd("G:/Shared drives/Nord Lab - Data/SFRI00/ASD1000/ASD1KV5/Karol/")
+
+
+```
+
+
+# 5. GC content
+
+```{r}
+
+# I'm using GC values from in silico PCR prediction, limiting the subset of amplicons to those with only 1 predicted product/
+#filter(d2, Perfect_In_silico_specificity == TRUE)
+
+# Merging GC dataset with perfect in silico specificity reduced amplicon number from 748 to 730. Not much loss!
+y_ASD1k_lm_GC <- merge(y_ASD1k_lm, dplyr::filter(d2, Perfect_In_silico_specificity == TRUE)[,c(1, 17)], by.x = "Amplicon", by.y = "UNIQID")
+
+```
+
+## 5.1 Plotting and modeling data with GC content
+
+```{r, fig.cap = "There seems to be limited if any correlation of GC content and amplicon activity"}
+formula <- y ~ x
+
+y_ASD1k_lm_GC$GC_ab_mean <- ifelse(y_ASD1k_lm_GC$GC_content > mean(na.omit(y_ASD1k_lm_GC$GC_content)), TRUE, FALSE)
+
+#y_ASD1k_lm_GC[-c(252, 499, 576),] # Removes rows containing GC values
+# na.omit(y_ASD1k_lm_GC)  - the same, just simpler
+
+ggplot(na.omit(y_ASD1k_lm_GC), 
+       aes(x = log2(Mean_gDNA), y = log2(Mean_cDNA), 
+           color = GC_content))+
+  geom_point(alpha = 0.5)+
+  theme_bw()+
+  geom_abline(intercept = 0, color = "red", linetype = 2)+
+  geom_smooth(formula = formula, method = 'lm', color = "black")+
+  stat_poly_eq(formula = formula, 
+                aes(label = paste(..rr.label.., ..eq.label.., sep = "~~~")), 
+                parse = TRUE)+
+  scale_color_gradient2(midpoint = mean(na.omit(y_ASD1k_lm_GC$GC_content)), low="blue3", mid="white",
+                     high="red3", space ="Lab" )+
+  facet_wrap(~ GC_ab_mean)+
+  labs(title = "DNA vs RNA proportions, split at mean GC content")+
+  theme(plot.title = element_text(hjust = 0.5),
+        legend.position="bottom")
 
 
 ```
