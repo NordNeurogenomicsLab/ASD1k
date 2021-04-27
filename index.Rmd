@@ -39,7 +39,7 @@ knitr::opts_chunk$set(message=FALSE,
                       warning = FALSE, 
                       error=FALSE, 
                       echo=TRUE, 
-                      cache=TRUE, 
+                      cache=FALSE, 
                       fig.width = 7, fig.height = 6, 
                       fig.align = 'left')
 ```
@@ -761,7 +761,7 @@ plot_grid(p1, p2,
 
 # 5. GC content
 
-```{r}
+```{r, cache=FALSE}
 
 # I'm using GC values from in silico PCR prediction, limiting the subset of amplicons to those with only 1 predicted product/
 #filter(d2, Perfect_In_silico_specificity == TRUE)
@@ -769,11 +769,17 @@ plot_grid(p1, p2,
 # Merging GC dataset with perfect in silico specificity reduced amplicon number from 748 to 730. Not much loss!
 y_ASD1k_lm_GC <- merge(y_ASD1k_lm, dplyr::filter(d2, Perfect_In_silico_specificity == TRUE)[,c(1, 17)], by.x = "Amplicon", by.y = "UNIQID")
 
+# 727 amplicons after removing 3 without isPCR sequence
+y_ASD1k_lm_GC <- na.omit(y_ASD1k_lm_GC)
+
 ```
 
 ## 5.1 Plotting and modeling data with GC content
 
-```{r, fig.cap = "There seems to be limited if any correlation of GC content and amplicon activity"}
+```{r, fig.cap = "There seems to be limited if any correlation of GC content and amplicon activity", cache=FALSE}
+
+library(ggplot2)
+
 formula <- y ~ x
 
 y_ASD1k_lm_GC$GC_ab_mean <- ifelse(y_ASD1k_lm_GC$GC_content > mean(na.omit(y_ASD1k_lm_GC$GC_content)), TRUE, FALSE)
@@ -797,6 +803,172 @@ ggplot(na.omit(y_ASD1k_lm_GC),
   labs(title = "DNA vs RNA proportions, split at mean GC content")+
   theme(plot.title = element_text(hjust = 0.5),
         legend.position="bottom")
+
+```
+
+
+```{r, fig.cap = "V4 and V5 replicates demonstrate oposing GC bias, but the correlation magnitude is small", fig.width = 12, cache=FALSE}
+
+# data.all$MeanRatio_MoM <- data.all$RNA_prop_mean / data.all$DNA_prop_mean
+
+y_ASD1k_lm_GC$MeanRatio_All <- y_ASD1k_lm_GC$Mean_cDNA / y_ASD1k_lm_GC$Mean_gDNA
+y_ASD1k_lm_GC$MeanRatio_V4 <- y_ASD1k_lm_GC$Mean_cDNA_V4/ y_ASD1k_lm_GC$Mean_gDNA_V4
+y_ASD1k_lm_GC$MeanRatio_V5 <- y_ASD1k_lm_GC$Mean_cDNA_V5/ y_ASD1k_lm_GC$Mean_gDNA_V5    
+
+
+formula <- y ~ x
+
+GC_cont_plot <- function(x, y){
+    ggplot(y_ASD1k_lm_GC, aes(x = log2(get(x)), y = GC_content))+
+    geom_point(alpha = 0.5)+
+    theme_bw()+
+    geom_smooth(formula = formula, method = 'lm', color = "black")+
+    stat_poly_eq(formula = formula, 
+                aes(label = paste(..rr.label.., ..eq.label.., sep = "~~~")), 
+                parse = TRUE)+
+    labs(title = y, x = "log2(mean DNA prop. / mean RNA prop.)")+    
+    theme(plot.title = element_text(hjust = 0.5, size = 14),
+        text = element_text(size = 12))    
+    }
+
+
+
+plot_grid(GC_cont_plot("MeanRatio_All", "V4 + V5 combined"),
+          GC_cont_plot("MeanRatio_V4", "V4"),
+          GC_cont_plot("MeanRatio_V5", "V5"),
+          nrow = 1,
+          labels = c("A", "B", "C"), 
+          vjust = 0.9)
+```
+
+## 5.2 GC content impact on amp. act.
+```{r, cache=FALSE}
+
+lm_all_GC <- lm(log2(Mean_cDNA) ~ log2(Mean_gDNA) + GC_content, data = y_ASD1k_lm_GC)
+lm_V4_GC <- lm(log2(Mean_cDNA_V4) ~ log2(Mean_gDNA_V4) + GC_content, data = y_ASD1k_lm_GC) 
+lm_V5_GC <- lm(log2(Mean_cDNA_V5) ~ log2(Mean_gDNA_V5) + GC_content, data = y_ASD1k_lm_GC)  
+
+lm_all <- lm(log2(Mean_cDNA) ~ log2(Mean_gDNA), data = y_ASD1k_lm_GC)
+lm_V4 <- lm(log2(Mean_cDNA_V4) ~ log2(Mean_gDNA_V4), data = y_ASD1k_lm_GC) 
+lm_V5 <- lm(log2(Mean_cDNA_V5) ~ log2(Mean_gDNA_V5), data = y_ASD1k_lm_GC)  
+
+# Add AIC and BIC
+lm_all_GC$AIC <- round(AIC(lm_all_GC), 1)
+lm_V4_GC$AIC <- round(AIC(lm_V4_GC), 1)
+lm_V5_GC$AIC <- round(AIC(lm_V5_GC), 1)
+
+lm_all$AIC <- round(AIC(lm_all), 1)
+lm_V4$AIC <- round(AIC(lm_V4), 1)
+lm_V5$AIC <- round(AIC(lm_V5), 1)
+
+lm_all_GC$BIC <- round(BIC(lm_all_GC), 1)
+lm_V4_GC$BIC <- round(BIC(lm_V4_GC), 1)
+lm_V5_GC$BIC <- round(BIC(lm_V5_GC), 1)
+
+lm_all$BIC <- round(BIC(lm_all), 1)
+lm_V4$BIC <- round(BIC(lm_V4), 1)
+lm_V5$BIC <- round(BIC(lm_V5), 1)
+```
+
+### 5.2.1 V4 + V5  
+```{r, cache=FALSE}
+summary(lm_all)
+summary(lm_all_GC)
+```
+
+### 5.2.2 V4
+```{r, cache=FALSE}
+summary(lm_V4)
+summary(lm_V4_GC)
+```
+
+### 5.2.3 V5
+```{r, cache=FALSE}
+
+summary(lm_V5)
+summary(lm_V5_GC)
+
+```
+
+### 5.2.4 Summary of the models
+```{r, results="asis", fig.width = 12, fig.height = 6, cache=FALSE}
+library(stargazer)
+
+stargazer(lm_all, lm_all_GC, lm_V4, lm_V4_GC, lm_V5, lm_V5_GC, 
+          title="Regression Results",
+          single.row = TRUE, 
+          font.size = "huge",
+          dep.var.labels.include = TRUE,
+         
+          column.labels=c("V4 + V5", "V4 + V5 w GC", "V4", "V4 w GC", "V5", "V5 w GC"),
+          align=TRUE, 
+          type = "html", 
+          keep.stat=c("aic", "bic", "rsq", "n"),
+          report=('vc*p'))
+
+
+```
+
+
+## 5.3 V4 vs V5 ratiometric and residuals
+
+```{r, fig.width = 12, fig.height = 6, cache=FALSE}
+
+y_ASD1k_lm_GC <- na.omit(y_ASD1k_lm_GC)
+
+p1 <- ggplot(y_ASD1k_lm_GC, aes(x = log2(MeanRatio_V4), y = log2(MeanRatio_V5)))+
+    geom_point(alpha = 0.5)+
+    theme_bw()+
+    geom_hline(yintercept = 0)+
+   geom_vline(xintercept = 0)+
+    labs(title = "V4 vs V5 ratiometric activity")+
+    geom_smooth(formula = formula, method = 'lm', color = "black")+
+    stat_poly_eq(formula = formula, 
+                aes(label = paste(..rr.label.., ..eq.label.., sep = "~~~")), 
+                parse = TRUE)+
+    theme(plot.title = element_text(hjust = 0.5, size = 14),
+        text = element_text(size = 12))
+
+
+y_ASD1k_lm_GC$V4_res <- lm_V4$residuals
+y_ASD1k_lm_GC$V5_res <- lm_V5$residuals
+y_ASD1k_lm_GC$V4_res_GC <- lm_V4_GC$residuals
+y_ASD1k_lm_GC$V5_res_GC <- lm_V5_GC$residuals
+
+
+p2 <- ggplot(y_ASD1k_lm_GC, aes(x = V4_res, y = V5_res))+
+    geom_point(alpha = 0.5)+
+    theme_bw()+
+    geom_hline(yintercept = 0)+
+   geom_vline(xintercept = 0)+
+    labs(title = "V4 vs V5 residuals in models without GC")+
+    geom_smooth(formula = formula, method = 'lm', color = "black")+
+    stat_poly_eq(formula = formula, 
+                aes(label = paste(..rr.label.., ..eq.label.., sep = "~~~")), 
+                parse = TRUE)+
+    theme(plot.title = element_text(hjust = 0.5, size = 14),
+        text = element_text(size = 12)) 
+
+
+p3 <- ggplot(y_ASD1k_lm_GC, aes(x = V4_res_GC, y = V5_res_GC))+
+    geom_point(alpha = 0.5)+
+    theme_bw()+
+    geom_hline(yintercept = 0)+
+   geom_vline(xintercept = 0)+
+    labs(title = "V4 vs V5 residuals in models with GC")+
+    geom_smooth(formula = formula, method = 'lm', color = "black")+
+    stat_poly_eq(formula = formula, 
+                aes(label = paste(..rr.label.., ..eq.label.., sep = "~~~")), 
+                parse = TRUE)+
+    theme(plot.title = element_text(hjust = 0.5, size = 14),
+        text = element_text(size = 12))     
+
+
+
+plot_grid(p1, p2, p3,
+          nrow = 1,
+          labels = c("A", "B", "C"), 
+          vjust = 0.9)
 
 
 ```
