@@ -469,9 +469,307 @@ p4
 ```
 
 
+### 2.1.5 DNA log2 V4
+
+```{r}
+
+#Let's construct a metadata df
+metadata <- data.frame("Sample_name" = c(colnames(data.v4)[2:18], colnames(data.v5)[2:21]))
+metadata$Replicate <- ifelse(metadata$Sample_name %in% colnames(data.v4)[2:18], "V4", "V5")
+
+class_of_nucleic_acid <- ifelse(grepl("AKg", metadata$Sample_name), "gDNA", NA)
+class_of_nucleic_acid <- ifelse(grepl("AKs|AKo", metadata$Sample_name), "cDNA", class_of_nucleic_acid)
+class_of_nucleic_acid <- ifelse(grepl("AKv", metadata$Sample_name), "virus", class_of_nucleic_acid)
+
+metadata$Nucleic_acid <- class_of_nucleic_acid
+
+
+# Proportion log2 DNA
+ggpairs(log2(amp.prop.plot[, 
+                           dplyr::filter(metadata, Replicate == "V4", 
+                                                   Nucleic_acid %in% c("gDNA", "virus"))$Sample_name]), 
+      lower = list(continuous = wrap("points", size = 0.5, alpha = 0.2, pch = 16), 
+                   combo = "box", discrete = "blank", na = "na"),
+      diag = list(discrete = "blankDiag", continuous = wrap("densityDiag", alpha = 0.4), na = "blankDiag"), 
+      upper = list(continuous = wrap('cor', size = 3)))+ 
+      theme_bw()+ 
+      theme(panel.grid.major = element_blank(), 
+            panel.grid.minor = element_blank(), 
+            text = element_text(size = 8), 
+            axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5))
+
+
+
+
+```
+
+### 2.1.6 RNA log2 V4
+
+JT: The initial reverse transcription was done with either polyT primer (odt20, “o”) or with the STAR-rev primer (“s”). The purpose being that the S-primer sets should pre-enrich for our transcripts and have higher concentration of amplify-able cDNA for downstream steps.
+
+KC: I'll sum the reads of the "o" and "s" samples before calculating proportions. The purpose of combining these RNA samples is to represent biological, not technical variance in the Ratiometric activity. 
+
+```{r}
+
+# Proportion log2 DNA
+ggpairs(log2(amp.prop.plot[, 
+                           dplyr::filter(metadata, Replicate == "V4", 
+                                                   Nucleic_acid %in% c("cDNA"))$Sample_name]), 
+      lower = list(continuous = wrap("points", size = 0.5, alpha = 0.2, pch = 16), 
+                   combo = "box", discrete = "blank", na = "na"),
+      diag = list(discrete = "blankDiag", continuous = wrap("densityDiag", alpha = 0.4), na = "blankDiag"), 
+      upper = list(continuous = wrap('cor', size = 3)))+ 
+      theme_bw()+ 
+      theme(panel.grid.major = element_blank(), 
+            panel.grid.minor = element_blank(), 
+            text = element_text(size = 8), 
+            axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5))
+
+
+```
+
+### 2.1.7 DNA log2 V5
+
+```{r}
+
+# Proportion log2 DNA
+ggpairs(log2(amp.prop.plot[, 
+                           dplyr::filter(metadata, Replicate == "V5", 
+                                                   Nucleic_acid %in% c("gDNA", "virus"))$Sample_name]), 
+      lower = list(continuous = wrap("points", size = 0.5, alpha = 0.2, pch = 16), 
+                   combo = "box", discrete = "blank", na = "na"),
+      diag = list(discrete = "blankDiag", continuous = wrap("densityDiag", alpha = 0.4), na = "blankDiag"), 
+      upper = list(continuous = wrap('cor', size = 3)))+ 
+      theme_bw()+ 
+      theme(panel.grid.major = element_blank(), 
+            panel.grid.minor = element_blank(), 
+            text = element_text(size = 8), 
+            axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5))
+
+
+```
+
+
+### 2.1.8 RNA log2 V5
+
+```{r}
+
+# Proportion log2 DNA
+ggpairs(log2(amp.prop.plot[,
+                           dplyr::filter(metadata, Replicate == "V5", 
+                                                   Nucleic_acid %in% c("cDNA"))$Sample_name]), 
+      lower = list(continuous = wrap("points", size = 0.5, alpha = 0.2, pch = 16), 
+                   combo = "box", discrete = "blank", na = "na"),
+      diag = list(discrete = "blankDiag", continuous = wrap("densityDiag", alpha = 0.4), na = "blankDiag"), 
+      upper = list(continuous = wrap('cor', size = 3)))+ 
+      theme_bw()+ 
+      theme(panel.grid.major = element_blank(), 
+            panel.grid.minor = element_blank(), 
+            text = element_text(size = 8), 
+            axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5))
+
+
+```
+
+## 2.2 PCA
+
+### 2.2.1 Scree plot
+```{r}
+library(plotly)
+
+pca_data <- prcomp(amp.prop.plot[,metadata$Sample_name], center = TRUE, scale = TRUE)
+
+pca_data_var_expl <- pca_data$sdev^2 / sum(pca_data$sdev^2)
+scree <- data.frame("PC" = paste0(seq(1:37)), "Var_exp" = pca_data_var_expl)
+  
+pca_data <- as.data.frame(pca_data$rotation)
+
+pca_data$Sample_name <- rownames(pca_data)
+pca_data <- merge(metadata, pca_data, by = "Sample_name")
+
+pca_data$Nucleic_acid <- ifelse(pca_data$Nucleic_acid == "gDNA", "DNA", pca_data$Nucleic_acid)
+pca_data$Nucleic_acid <- ifelse(pca_data$Nucleic_acid == "cDNA", "RNA", pca_data$Nucleic_acid)
+pca_data$Nucleic_acid <- ifelse(pca_data$Nucleic_acid == "virus", "Virus MaxiPrep", pca_data$Nucleic_acid)
+
+# RT primer type
+pca_data_RNA <- dplyr::filter(pca_data, Nucleic_acid == "RNA") 
+pca_data_RNA$RT_primer <- ifelse(grepl("o", pca_data_RNA$Sample_name), "OdT20", "STAR-rev")
+
+#pca_data_RNA$Sample_name[grepl("o", pca_data_RNA$Sample_name, "Oligo", "STAR")]
+pca_data <- merge(pca_data_RNA[, c("Sample_name", "RT_primer")], pca_data, all = TRUE)
+pca_data$RT_primer <- ifelse(is.na(pca_data$RT_primer), "NA", pca_data$RT_primer) 
+
+
+#head(pca_data)
+```
+
+
+```{r, fig.cap= "The first 2 PCs account for 95% of variation", fig.width = 4, fig.height = 4}
+
+ggplot(scree[1:5,], aes(x = PC, y = Var_exp))+
+  geom_bar(stat = "identity")+
+  scale_y_continuous(breaks=seq(0, 1, 0.1))+
+  theme_bw()+
+  labs(title = "Scree plot", x = "PC", y = "Variance explained")+
+  theme(plot.title = element_text(hjust = 0.5))
+
+
+```
+
+### 2.2.2 PCA DNA + RNA
+```{r, fig.cap = "PC2 separates DNA and RNA samples. PC1 separates DNA and RNA samples, with the exception of 3 V4 samples."}
+
+p <- ggplot(pca_data, aes(x = PC1, y = PC2, color = Nucleic_acid, shape = Replicate, label = Sample_name))+
+  geom_point(alpha = 0.7)+
+  theme_bw()+
+  labs(title = "PC1 vs PC2")+
+  theme(plot.title = element_text(hjust = 0.5))
+
+ggplotly(p)
+
+```
+
+```{r, fig.cap = "PC3 separates V4 and V5 RNA samples"}
+
+p <- ggplot(pca_data, aes(x = PC2, y = PC3, color = Nucleic_acid, shape = Replicate, label = Sample_name))+
+  geom_point(alpha = 0.7)+
+  theme_bw()+
+  labs(title = "PC2 vs PC3")+
+  theme(plot.title = element_text(hjust = 0.5))
+
+ggplotly(p)
+
+```
+
+### 2.2.3 PCA - only RNA samples
+
+```{r, fig.cap = "PC3 separates V4 and V5 RNA samples"}
+
+pca_data <- prcomp(amp.prop.plot[,dplyr::filter(metadata, Nucleic_acid == "cDNA")$Sample_name], center = TRUE, scale = TRUE)
+
+pca_data_var_expl <- pca_data$sdev^2 / sum(pca_data$sdev^2)
+scree <- data.frame("PC" = paste0(seq(1:23)), "Var_exp" = pca_data_var_expl)
+  
+pca_data <- as.data.frame(pca_data$rotation)
+
+pca_data$Sample_name <- rownames(pca_data)
+pca_data <- merge(metadata, pca_data, by = "Sample_name")
+
+
+pca_data$Nucleic_acid <- ifelse(pca_data$Nucleic_acid == "cDNA", "RNA", pca_data$Nucleic_acid)
+
+
+# RT primer type
+pca_data_RNA <- dplyr::filter(pca_data, Nucleic_acid == "RNA") 
+pca_data_RNA$RT_primer <- ifelse(grepl("o", pca_data_RNA$Sample_name), "OdT20", "STAR-rev")
+
+#pca_data_RNA$Sample_name[grepl("o", pca_data_RNA$Sample_name, "Oligo", "STAR")]
+pca_data <- merge(pca_data_RNA[, c("Sample_name", "RT_primer")], pca_data, all = TRUE)
+pca_data$RT_primer <- ifelse(is.na(pca_data$RT_primer), "NA", pca_data$RT_primer) 
+
+pca_data$Biol_rep <- gsub('.*?([0-9]+).*', '\\1', pca_data$Sample_name)
+
+
+```
+
+
+```{r, fig.cap= "The first 2 PCs account for 98% of variation", fig.width = 4, fig.height = 4}
+
+ggplot(scree[1:5,], aes(x = PC, y = Var_exp))+
+  geom_bar(stat = "identity")+
+  scale_y_continuous(breaks=seq(0, 1, 0.1))+
+  theme_bw()+
+  labs(title = "Scree plot", x = "", y = "Variance explained")+
+  theme(plot.title = element_text(hjust = 0.5))
+
+```
+
+
+```{r, fig.cap = "PC1 and PC2 separates V4 and V5 samples. RT_primer does not separate samples along PC1 or PC2"}
+
+p <- ggplot(pca_data, aes(x = PC1, y = PC2, color = RT_primer, shape = Replicate, label = Sample_name))+
+  geom_point(alpha = 0.7)+
+  theme_bw()+
+  labs(title = "PC1 vs PC2")+
+  theme(plot.title = element_text(hjust = 0.5))
+
+ggplotly(p)
+
+```
+
+```{r, fig.cap = "Clustering of color-coded technical replicates, PC1 vs PC2"}
+
+library(ggrepel)
+
+p <- ggplot(pca_data, aes(x = PC1, y = PC2, color = Biol_rep, shape = Replicate, label = Sample_name))+
+  geom_point(alpha = 0.7)+
+  theme_bw()+
+  labs(title = "PC1 vs PC2")+
+  theme(plot.title = element_text(hjust = 0.5))+
+  geom_text_repel()
+
+
+p
+
+```
+
+```{r, fig.cap = "Clustering of color-coded technical replicates, PC2 vs PC3"}
+
+library(ggrepel)
+
+p <- ggplot(pca_data, aes(x = PC2, y = PC3, color = Biol_rep, shape = Replicate, label = Sample_name))+
+  geom_point(alpha = 0.7)+
+  theme_bw()+
+  labs(title = "PC2 vs PC3")+
+  theme(plot.title = element_text(hjust = 0.5))+
+  geom_text_repel()
+
+
+p
+
+```
+
+
+## 2.3 Recalculate proportions combining technical replicates
+
+```{r, eval=FALSE}
+
+# Sum counts of technical replicates
+
+df <- data.merge_ASD1k
+
+data.frame("Amplicon" = df$Amplicon,
+           
+           )
+
+
+
+AKg49_S40        V4         gDNA
+AKg50_S41        V4         gDNA
+AKg51_S42        V4         gDNA
+AKg52_S43        V4         gDNA
+AKg53_S44        V4         gDNA
+
+rownames(amp.prop) <- amp.prop$Amplicon
+amp.prop$Amplicon <- NULL
+samples <- colnames(amp.prop)
+
+
+
+# Proportion function here: (x+1)/(sum(x)+1)  # +1 is padding
+## KC: again, the coding practive below is really bad.
+amp.prop <- as.data.frame(apply(amp.prop, 2, function(x) { (x+1)/(sum(x, na.rm = T)+1) }))
+amp.prop$Amplicon <- rownames(amp.prop)
+amp.prop.plot <- amp.prop
+
+
+```
+
+
+
 # 3. Ratiometric activity
 
-```{r, fig.width = 12, fig.height = 12, cache=TRUE}
+```{r Deprecated incorrectly represents biological variability in the data, fig.width = 12, fig.height = 12, cache=TRUE, eval= TRUE}
 ## Manually calculate ratiometric activity (RNA/DNA)
 amp.act <- data.frame("amp_id" = rownames(amp.prop.plot), "Color" = "ASD1k",
                       "Ratio.V5.S.54" = 0, "Ratio.V5.S.55" = 0, "Ratio.V5.S.55b" = 0, "Ratio.V5.S.55c" = 0, 
@@ -479,6 +777,70 @@ amp.act <- data.frame("amp_id" = rownames(amp.prop.plot), "Color" = "ASD1k",
                       "Ratio.V5.S.69" = 0, "Ratio.V5.S.70" = 0, "Ratio.V5.S.71" = 0, "Ratio.V5.S.71b" = 0, "Ratio.V5.S.71c" = 0, 
                       "Ratio.V4.O.49" = 0, "Ratio.V4.O.50" = 0, "Ratio.V4.O.51" = 0, "Ratio.V4.O.52" = 0, "Ratio.V4.O.53" = 0, 
                       "Ratio.V4.S.49" = 0, "Ratio.V4.S.50" = 0, "Ratio.V4.S.51" = 0, "Ratio.V4.S.52" = 0, "Ratio.V4.S.53" = 0
+                      )
+
+
+# Identify 10 amplicons which are inactive. 
+
+## manually define ratiometric activity for V5
+amp.act$Ratio.V5.S.54 <- (amp.prop.plot$AKs54_S90) / (amp.prop.plot$AKg54_S83)
+amp.act$Ratio.V5.S.55 <- (amp.prop.plot$AKs55_S91) / (amp.prop.plot$AKg55_S84)
+amp.act$Ratio.V5.S.55b <- (amp.prop.plot$AKs55b_S97) / (amp.prop.plot$AKg55_S84)
+amp.act$Ratio.V5.S.55c <- (amp.prop.plot$AKs55c_S100) / (amp.prop.plot$AKg55_S84)
+amp.act$Ratio.V5.S.56 <- (amp.prop.plot$AKs56_S92) / (amp.prop.plot$AKg56_S85)
+amp.act$Ratio.V5.S.56b <- (amp.prop.plot$AKs56b_S98) / (amp.prop.plot$AKg56_S85)
+amp.act$Ratio.V5.S.56c <- (amp.prop.plot$AKs56c_S101) / (amp.prop.plot$AKg56_S85)
+amp.act$Ratio.V5.S.57 <- (amp.prop.plot$AKs57_S93) / (amp.prop.plot$AKg57_S86)
+amp.act$Ratio.V5.S.69 <- (amp.prop.plot$AKs69_S94) / (amp.prop.plot$AKg69_S87)
+amp.act$Ratio.V5.S.70 <- (amp.prop.plot$AKs70_S95) / (amp.prop.plot$AKg70_S88)
+amp.act$Ratio.V5.S.71 <- (amp.prop.plot$AKs71_S96) / (amp.prop.plot$AKg71_S89)
+amp.act$Ratio.V5.S.71b <- (amp.prop.plot$AKs71b_S99) / (amp.prop.plot$AKg71_S89)
+amp.act$Ratio.V5.S.71c <- (amp.prop.plot$AKs71c_S102) / (amp.prop.plot$AKg71_S89)
+
+## manually define ratiometric activity for V4
+amp.act$Ratio.V4.O.49 <- (amp.prop.plot$AKo49_S50) / (amp.prop.plot$AKg49_S40)
+amp.act$Ratio.V4.O.50 <- (amp.prop.plot$AKo50_S51) / (amp.prop.plot$AKg50_S41)
+amp.act$Ratio.V4.O.51 <- (amp.prop.plot$AKo51_S52) / (amp.prop.plot$AKg51_S42)
+amp.act$Ratio.V4.O.52 <- (amp.prop.plot$AKo52_S53) / (amp.prop.plot$AKg52_S43)
+amp.act$Ratio.V4.O.53 <- (amp.prop.plot$AKo53_S54) / (amp.prop.plot$AKg53_S44)
+amp.act$Ratio.V4.S.49 <- (amp.prop.plot$AKs49_S45) / (amp.prop.plot$AKg49_S40)
+amp.act$Ratio.V4.S.50 <- (amp.prop.plot$AKs50_S46) / (amp.prop.plot$AKg50_S41)
+amp.act$Ratio.V4.S.51 <- (amp.prop.plot$AKs51_S47) / (amp.prop.plot$AKg51_S42)
+amp.act$Ratio.V4.S.52 <- (amp.prop.plot$AKs52_S48) / (amp.prop.plot$AKg52_S43)
+amp.act$Ratio.V4.S.53 <- (amp.prop.plot$AKs53_S49) / (amp.prop.plot$AKg53_S44)
+
+```
+
+#
+
+
+```{r, fig.width = 12, fig.height = 12, cache=TRUE}
+## Manually calculate ratiometric activity (RNA/DNA)
+amp.act <- data.frame("amp_id" = rownames(amp.prop.plot), "Color" = "ASD1k",
+                      "Ratio.V4.O.49" = 0, 
+                      "Ratio.V4.O.50" = 0, 
+                      "Ratio.V4.O.51" = 0, 
+                      "Ratio.V4.O.52" = 0, 
+                      "Ratio.V4.O.53" = 0, 
+                      "Ratio.V4.S.49" = 0, 
+                      "Ratio.V4.S.50" = 0, 
+                      "Ratio.V4.S.51" = 0, 
+                      "Ratio.V4.S.52" = 0, 
+                      "Ratio.V4.S.53" = 0,
+                      
+                      "Ratio.V5.S.54" = 0, 
+                      "Ratio.V5.S.55" = 0, 
+                      "Ratio.V5.S.55b" = 0, 
+                      "Ratio.V5.S.55c" = 0, 
+                      "Ratio.V5.S.56" = 0, 
+                      "Ratio.V5.S.56b" = 0, 
+                      "Ratio.V5.S.56c" = 0, 
+                      "Ratio.V5.S.57" = 0, 
+                      "Ratio.V5.S.69" = 0, 
+                      "Ratio.V5.S.70" = 0, 
+                      "Ratio.V5.S.71" = 0, 
+                      "Ratio.V5.S.71b" = 0, 
+                      "Ratio.V5.S.71c" = 0
                       )
 
 ## manually define ratiometric activity for V5
@@ -509,6 +871,8 @@ amp.act$Ratio.V4.S.52 <- (amp.prop.plot$AKs52_S48) / (amp.prop.plot$AKg52_S43)
 amp.act$Ratio.V4.S.53 <- (amp.prop.plot$AKs53_S49) / (amp.prop.plot$AKg53_S44)
 
 ```
+
+
 
 ## 3.1 Correlation plots - 1994 amplicons
 
@@ -562,15 +926,7 @@ amp.act_summary$SD_All <- rowSds(as.matrix(amp.act[,c(3:25)]))
 #colnames(data.v4)
 #colnames(data.v5)
 
-#Let's construct a proper metadata df
-metadata <- data.frame("Sample_name" = c(colnames(data.v4)[2:18], colnames(data.v5)[2:21]))
-metadata$Replicate <- ifelse(metadata$Sample_name %in% colnames(data.v4)[2:18], "V4", "V5")
 
-class_of_nucleic_acid <- ifelse(grepl("AKg", metadata$Sample_name), "gDNA", NA)
-class_of_nucleic_acid <- ifelse(grepl("AKs|AKo", metadata$Sample_name), "cDNA", class_of_nucleic_acid)
-class_of_nucleic_acid <- ifelse(grepl("AKv", metadata$Sample_name), "virus", class_of_nucleic_acid)
-
-metadata$Nucleic_acid <- class_of_nucleic_acid
 
 V4_gDNA_samples <- dplyr::filter(metadata, Replicate == "V4", Nucleic_acid == "gDNA")$Sample_name
 V4_cDNA_samples <- dplyr::filter(metadata, Replicate == "V4", Nucleic_acid == "cDNA")$Sample_name
