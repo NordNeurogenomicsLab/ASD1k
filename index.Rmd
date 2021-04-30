@@ -641,7 +641,7 @@ ggplotly(p)
 
 ```
 
-### 2.2.3 PCA - only RNA samples
+### 2.2.3 PCA - RNA samples only
 
 ```{r, fig.cap = "PC3 separates V4 and V5 RNA samples"}
 
@@ -730,39 +730,135 @@ p
 ```
 
 
-## 2.3 Recalculate proportions combining technical replicates
+## 2.3 Combining technical replicates
 
-```{r, eval=FALSE}
+```{r}
 
 # Sum counts of technical replicates
 
 df <- data.merge_ASD1k
+data.merge_ASD1k_original <- df
 
-data.frame("Amplicon" = df$Amplicon,
+# d = DNA, r = RNA, v = virus
+data.merge_ASD1k <- data.frame("Amplicon" = df$Amplicon,
+           #V4
+           "AKd49" = df$AKg49_S40,
+           "AKd50" = df$AKg50_S41,
+           "AKd51" = df$AKg51_S42,
+           "AKd52" = df$AKg52_S43,
+           "AKd53" = df$AKg53_S44,
+           
+           "AKr49" = c(df$AKo49_S50 + df$AKs49_S45),   
+           "AKr50" = c(df$AKo50_S51 + df$AKs50_S46),
+           "AKr51" = c(df$AKo51_S52 + df$AKs51_S47),
+           "AKr52" = c(df$AKo52_S53 + df$AKs52_S48),
+           "AKr53" = c(df$AKo53_S54 + df$AKs53_S49),
+           
+           "AKv01" = df$AKv01_S56,
+           "AKv02" = df$AKv02_S55,
+           
+           #V5
+           "AKd54" = df$AKg54_S83,
+           "AKd55" = df$AKg55_S84,
+           "AKd56" = df$AKg56_S85,
+           "AKd57" = df$AKg57_S86,
+           "AKd69" = df$AKg69_S87,
+           "AKd70" = df$AKg70_S88,
+           "AKd71" = df$AKg71_S89,
+           
+           "AKr54" = df$AKs54_S90,
+           "AKr55" = c(df$AKs55b_S97 + df$AKs55c_S100 + df$AKs55_S91),
+           "AKr56" = c(df$AKs56b_S98 + df$AKs56c_S101 + df$AKs56_S92),
+           "AKr57" = df$AKs57_S93,
+           "AKr69" = df$AKs69_S94,
+           "AKr70" = df$AKs70_S95,
+           "AKr71" = c(df$AKs71b_S99 + df$AKs71c_S102 + df$AKs71_S96)
            
            )
 
+metadata_original <- metadata
+
+metadata <- data.frame("Sample_name" = colnames(data.merge_ASD1k)[2:27],
+                       "Replicate" = c(rep("V4", 12), rep("V5", 14)),
+                       "Nucleic_acid" = c(rep("DNA", 5), rep("RNA", 5), 
+                                          rep("virus", 2), rep("DNA", 7), rep("RNA", 7))) 
+
+```
+
+## 2.3.1 Sequencing depth
+```{r}
+
+seq_depth <- data.frame(
+  "Sample_name" = c("AKd49", "AKd50", "AKd51", "AKd52", "AKd53",
+                    "AKr49", "AKr49", "AKr50", "AKr50", "AKr51", "AKr51", "AKr52", "AKr52", "AKr53", "AKr53",
+                    "AKv01", "AKv02",
+                    "AKd54", "AKd55", "AKd56", "AKd57", "AKd69", "AKd70", "AKd71",
+                    "AKr54", "AKr55", "AKr55", "AKr55", "AKr56", "AKr56", "AKr56",
+                    "AKr57",  "AKr69", "AKr70",
+                    "AKr71", "AKr71", "AKr71"),
+  
+  "Sample_name_original" = metadata_original$Sample_name,
+  "Nucleic_acid" = c(rep("DNA", 5), rep("RNA", 10), rep("virus", 2), rep("DNA", 7), rep("RNA", 13)),
+  "Read_depth" = colSums(data.merge_ASD1k_original[,2:38]))
+                    
+
+ggplot(seq_depth, aes(x = Sample_name, y = Read_depth / 10^6, 
+                      color = Sample_name_original, fill = Nucleic_acid))+
+  geom_bar(position = "stack", stat = "identity")+
+  theme_bw()+
+  labs(title = "Read depth", x = " Sample", "Reads [millions]")+
+  theme(legend.position = "none", plot.title = element_text(hjust = 0.5))
+
+```
+
+## 2.4 Proportion correlations - comb. rep.
+
+```{r}
+amp.prop.plot_original <- amp.prop.plot
 
 
-AKg49_S40        V4         gDNA
-AKg50_S41        V4         gDNA
-AKg51_S42        V4         gDNA
-AKg52_S43        V4         gDNA
-AKg53_S44        V4         gDNA
-
+# Calculate proportion
+amp.prop <- data.merge_ASD1k
 rownames(amp.prop) <- amp.prop$Amplicon
 amp.prop$Amplicon <- NULL
 samples <- colnames(amp.prop)
 
-
-
 # Proportion function here: (x+1)/(sum(x)+1)  # +1 is padding
-## KC: again, the coding practive below is really bad.
 amp.prop <- as.data.frame(apply(amp.prop, 2, function(x) { (x+1)/(sum(x, na.rm = T)+1) }))
 amp.prop$Amplicon <- rownames(amp.prop)
 amp.prop.plot <- amp.prop
 
+```
 
+
+### 2.4.1 DNA log2
+```{r, fig.width = 10, fig.height = 8, cache=TRUE}
+# Proportion log2 DNA
+ggpairs(log2(amp.prop.plot[, grepl("Kd|Kv", colnames(amp.prop.plot))]), 
+      lower = list(continuous = wrap("points", size = 0.5, alpha = 0.2, pch = 16), 
+                   combo = "box", discrete = "blank", na = "na"),
+      diag = list(discrete = "blankDiag", continuous = wrap("densityDiag", alpha = 0.4), na = "blankDiag"), 
+      upper = list(continuous = wrap('cor', size = 3)))+ 
+      theme_bw()+ 
+      theme(panel.grid.major = element_blank(), 
+            panel.grid.minor = element_blank(), 
+            text = element_text(size = 8), 
+            axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5))
+```
+
+### 2.4.2 RNA log2
+```{r, fig.width = 10, fig.height = 8, cache=TRUE}
+# Proportion log2 RNA
+ggpairs(log2(amp.prop.plot[, grepl("Kr", colnames(amp.prop.plot))]), 
+      lower = list(continuous = wrap("points", size = 0.5, alpha = 0.2, pch = 16), 
+                   combo = "box", discrete = "blank", na = "na"),
+      diag = list(discrete = "blankDiag", continuous = wrap("densityDiag", alpha = 0.4), na = "blankDiag"), 
+      upper = list(continuous = wrap('cor', size = 3)))+ 
+      theme_bw()+ 
+      theme(panel.grid.major = element_blank(), 
+            panel.grid.minor = element_blank(), 
+            text = element_text(size = 8), 
+            axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5))
 ```
 
 
@@ -771,104 +867,25 @@ amp.prop.plot <- amp.prop
 
 ```{r Deprecated incorrectly represents biological variability in the data, fig.width = 12, fig.height = 12, cache=TRUE, eval= TRUE}
 ## Manually calculate ratiometric activity (RNA/DNA)
-amp.act <- data.frame("amp_id" = rownames(amp.prop.plot), "Color" = "ASD1k",
-                      "Ratio.V5.S.54" = 0, "Ratio.V5.S.55" = 0, "Ratio.V5.S.55b" = 0, "Ratio.V5.S.55c" = 0, 
-                      "Ratio.V5.S.56" = 0, "Ratio.V5.S.56b" = 0, "Ratio.V5.S.56c" = 0, "Ratio.V5.S.57" = 0, 
-                      "Ratio.V5.S.69" = 0, "Ratio.V5.S.70" = 0, "Ratio.V5.S.71" = 0, "Ratio.V5.S.71b" = 0, "Ratio.V5.S.71c" = 0, 
-                      "Ratio.V4.O.49" = 0, "Ratio.V4.O.50" = 0, "Ratio.V4.O.51" = 0, "Ratio.V4.O.52" = 0, "Ratio.V4.O.53" = 0, 
-                      "Ratio.V4.S.49" = 0, "Ratio.V4.S.50" = 0, "Ratio.V4.S.51" = 0, "Ratio.V4.S.52" = 0, "Ratio.V4.S.53" = 0
-                      )
-
-
-# Identify 10 amplicons which are inactive. 
+amp.act <- data.frame("amp_id" = rownames(amp.prop.plot), "Color" = "ASD1k")
 
 ## manually define ratiometric activity for V5
-amp.act$Ratio.V5.S.54 <- (amp.prop.plot$AKs54_S90) / (amp.prop.plot$AKg54_S83)
-amp.act$Ratio.V5.S.55 <- (amp.prop.plot$AKs55_S91) / (amp.prop.plot$AKg55_S84)
-amp.act$Ratio.V5.S.55b <- (amp.prop.plot$AKs55b_S97) / (amp.prop.plot$AKg55_S84)
-amp.act$Ratio.V5.S.55c <- (amp.prop.plot$AKs55c_S100) / (amp.prop.plot$AKg55_S84)
-amp.act$Ratio.V5.S.56 <- (amp.prop.plot$AKs56_S92) / (amp.prop.plot$AKg56_S85)
-amp.act$Ratio.V5.S.56b <- (amp.prop.plot$AKs56b_S98) / (amp.prop.plot$AKg56_S85)
-amp.act$Ratio.V5.S.56c <- (amp.prop.plot$AKs56c_S101) / (amp.prop.plot$AKg56_S85)
-amp.act$Ratio.V5.S.57 <- (amp.prop.plot$AKs57_S93) / (amp.prop.plot$AKg57_S86)
-amp.act$Ratio.V5.S.69 <- (amp.prop.plot$AKs69_S94) / (amp.prop.plot$AKg69_S87)
-amp.act$Ratio.V5.S.70 <- (amp.prop.plot$AKs70_S95) / (amp.prop.plot$AKg70_S88)
-amp.act$Ratio.V5.S.71 <- (amp.prop.plot$AKs71_S96) / (amp.prop.plot$AKg71_S89)
-amp.act$Ratio.V5.S.71b <- (amp.prop.plot$AKs71b_S99) / (amp.prop.plot$AKg71_S89)
-amp.act$Ratio.V5.S.71c <- (amp.prop.plot$AKs71c_S102) / (amp.prop.plot$AKg71_S89)
+amp.act$Ratio.V5.54 <- (amp.prop.plot$AKr54) / (amp.prop.plot$AKd54)
+amp.act$Ratio.V5.55 <- (amp.prop.plot$AKr55) / (amp.prop.plot$AKd55)
+amp.act$Ratio.V5.56 <- (amp.prop.plot$AKr56) / (amp.prop.plot$AKd56)
+amp.act$Ratio.V5.57 <- (amp.prop.plot$AKr57) / (amp.prop.plot$AKd57)
+amp.act$Ratio.V5.69 <- (amp.prop.plot$AKr69) / (amp.prop.plot$AKd69)
+amp.act$Ratio.V5.70 <- (amp.prop.plot$AKr70) / (amp.prop.plot$AKd70)
+amp.act$Ratio.V5.71 <- (amp.prop.plot$AKr71) / (amp.prop.plot$AKd71)
+
 
 ## manually define ratiometric activity for V4
-amp.act$Ratio.V4.O.49 <- (amp.prop.plot$AKo49_S50) / (amp.prop.plot$AKg49_S40)
-amp.act$Ratio.V4.O.50 <- (amp.prop.plot$AKo50_S51) / (amp.prop.plot$AKg50_S41)
-amp.act$Ratio.V4.O.51 <- (amp.prop.plot$AKo51_S52) / (amp.prop.plot$AKg51_S42)
-amp.act$Ratio.V4.O.52 <- (amp.prop.plot$AKo52_S53) / (amp.prop.plot$AKg52_S43)
-amp.act$Ratio.V4.O.53 <- (amp.prop.plot$AKo53_S54) / (amp.prop.plot$AKg53_S44)
-amp.act$Ratio.V4.S.49 <- (amp.prop.plot$AKs49_S45) / (amp.prop.plot$AKg49_S40)
-amp.act$Ratio.V4.S.50 <- (amp.prop.plot$AKs50_S46) / (amp.prop.plot$AKg50_S41)
-amp.act$Ratio.V4.S.51 <- (amp.prop.plot$AKs51_S47) / (amp.prop.plot$AKg51_S42)
-amp.act$Ratio.V4.S.52 <- (amp.prop.plot$AKs52_S48) / (amp.prop.plot$AKg52_S43)
-amp.act$Ratio.V4.S.53 <- (amp.prop.plot$AKs53_S49) / (amp.prop.plot$AKg53_S44)
+amp.act$Ratio.V4.49 <- (amp.prop.plot$AKr49) / (amp.prop.plot$AKd49)
+amp.act$Ratio.V4.50 <- (amp.prop.plot$AKr50) / (amp.prop.plot$AKd50)
+amp.act$Ratio.V4.51 <- (amp.prop.plot$AKr51) / (amp.prop.plot$AKd51)
+amp.act$Ratio.V4.52 <- (amp.prop.plot$AKr52) / (amp.prop.plot$AKd52)
+amp.act$Ratio.V4.53 <- (amp.prop.plot$AKr53) / (amp.prop.plot$AKd53)
 
-```
-
-#
-
-
-```{r, fig.width = 12, fig.height = 12, cache=TRUE}
-## Manually calculate ratiometric activity (RNA/DNA)
-amp.act <- data.frame("amp_id" = rownames(amp.prop.plot), "Color" = "ASD1k",
-                      "Ratio.V4.O.49" = 0, 
-                      "Ratio.V4.O.50" = 0, 
-                      "Ratio.V4.O.51" = 0, 
-                      "Ratio.V4.O.52" = 0, 
-                      "Ratio.V4.O.53" = 0, 
-                      "Ratio.V4.S.49" = 0, 
-                      "Ratio.V4.S.50" = 0, 
-                      "Ratio.V4.S.51" = 0, 
-                      "Ratio.V4.S.52" = 0, 
-                      "Ratio.V4.S.53" = 0,
-                      
-                      "Ratio.V5.S.54" = 0, 
-                      "Ratio.V5.S.55" = 0, 
-                      "Ratio.V5.S.55b" = 0, 
-                      "Ratio.V5.S.55c" = 0, 
-                      "Ratio.V5.S.56" = 0, 
-                      "Ratio.V5.S.56b" = 0, 
-                      "Ratio.V5.S.56c" = 0, 
-                      "Ratio.V5.S.57" = 0, 
-                      "Ratio.V5.S.69" = 0, 
-                      "Ratio.V5.S.70" = 0, 
-                      "Ratio.V5.S.71" = 0, 
-                      "Ratio.V5.S.71b" = 0, 
-                      "Ratio.V5.S.71c" = 0
-                      )
-
-## manually define ratiometric activity for V5
-amp.act$Ratio.V5.S.54 <- (amp.prop.plot$AKs54_S90) / (amp.prop.plot$AKg54_S83)
-amp.act$Ratio.V5.S.55 <- (amp.prop.plot$AKs55_S91) / (amp.prop.plot$AKg55_S84)
-amp.act$Ratio.V5.S.55b <- (amp.prop.plot$AKs55b_S97) / (amp.prop.plot$AKg55_S84)
-amp.act$Ratio.V5.S.55c <- (amp.prop.plot$AKs55c_S100) / (amp.prop.plot$AKg55_S84)
-amp.act$Ratio.V5.S.56 <- (amp.prop.plot$AKs56_S92) / (amp.prop.plot$AKg56_S85)
-amp.act$Ratio.V5.S.56b <- (amp.prop.plot$AKs56b_S98) / (amp.prop.plot$AKg56_S85)
-amp.act$Ratio.V5.S.56c <- (amp.prop.plot$AKs56c_S101) / (amp.prop.plot$AKg56_S85)
-amp.act$Ratio.V5.S.57 <- (amp.prop.plot$AKs57_S93) / (amp.prop.plot$AKg57_S86)
-amp.act$Ratio.V5.S.69 <- (amp.prop.plot$AKs69_S94) / (amp.prop.plot$AKg69_S87)
-amp.act$Ratio.V5.S.70 <- (amp.prop.plot$AKs70_S95) / (amp.prop.plot$AKg70_S88)
-amp.act$Ratio.V5.S.71 <- (amp.prop.plot$AKs71_S96) / (amp.prop.plot$AKg71_S89)
-amp.act$Ratio.V5.S.71b <- (amp.prop.plot$AKs71b_S99) / (amp.prop.plot$AKg71_S89)
-amp.act$Ratio.V5.S.71c <- (amp.prop.plot$AKs71c_S102) / (amp.prop.plot$AKg71_S89)
-
-## manually define ratiometric activity for V4
-amp.act$Ratio.V4.O.49 <- (amp.prop.plot$AKo49_S50) / (amp.prop.plot$AKg49_S40)
-amp.act$Ratio.V4.O.50 <- (amp.prop.plot$AKo50_S51) / (amp.prop.plot$AKg50_S41)
-amp.act$Ratio.V4.O.51 <- (amp.prop.plot$AKo51_S52) / (amp.prop.plot$AKg51_S42)
-amp.act$Ratio.V4.O.52 <- (amp.prop.plot$AKo52_S53) / (amp.prop.plot$AKg52_S43)
-amp.act$Ratio.V4.O.53 <- (amp.prop.plot$AKo53_S54) / (amp.prop.plot$AKg53_S44)
-amp.act$Ratio.V4.S.49 <- (amp.prop.plot$AKs49_S45) / (amp.prop.plot$AKg49_S40)
-amp.act$Ratio.V4.S.50 <- (amp.prop.plot$AKs50_S46) / (amp.prop.plot$AKg50_S41)
-amp.act$Ratio.V4.S.51 <- (amp.prop.plot$AKs51_S47) / (amp.prop.plot$AKg51_S42)
-amp.act$Ratio.V4.S.52 <- (amp.prop.plot$AKs52_S48) / (amp.prop.plot$AKg52_S43)
-amp.act$Ratio.V4.S.53 <- (amp.prop.plot$AKs53_S49) / (amp.prop.plot$AKg53_S44)
 
 ```
 
@@ -906,17 +923,13 @@ library(data.table)
 
 amp.act_summary <- amp.act[,1:2]
 
-amp.act_summary$Mean_V5 <- rowMeans(amp.act[,c(3:15)])
-amp.act_summary$Mean_V4 <- rowMeans(amp.act[,c(16:25)])
-amp.act_summary$Mean_V4.O <- rowMeans(amp.act[,c(16:20)])
-amp.act_summary$Mean_V4.S <- rowMeans(amp.act[,c(21:20)])
-amp.act_summary$Mean_All <- rowMeans(amp.act[,c(3:25)])
+amp.act_summary$Mean_V5 <- rowMeans(amp.act[,c(3:9)])
+amp.act_summary$Mean_V4 <- rowMeans(amp.act[,c(10:14)])
+amp.act_summary$Mean_All <- rowMeans(amp.act[,c(3:14)])
 
-amp.act_summary$SD_V5 <- rowSds(as.matrix(amp.act[,c(3:15)]))
-amp.act_summary$SD_V4 <- rowSds(as.matrix(amp.act[,c(16:25)]))
-amp.act_summary$SD_V4.O <- rowSds(as.matrix(amp.act[,c(16:20)]))
-amp.act_summary$SD_V4.S <- rowSds(as.matrix(amp.act[,c(21:20)]))
-amp.act_summary$SD_All <- rowSds(as.matrix(amp.act[,c(3:25)]))
+amp.act_summary$SD_V5 <- rowSds(as.matrix(amp.act[,c(3:9)]))
+amp.act_summary$SD_V4 <- rowSds(as.matrix(amp.act[,c(10:14)]))
+amp.act_summary$SD_All <- rowSds(as.matrix(amp.act[,c(3:14)]))
 
 
 
@@ -927,14 +940,13 @@ amp.act_summary$SD_All <- rowSds(as.matrix(amp.act[,c(3:25)]))
 #colnames(data.v5)
 
 
+V4_DNA_samples <- dplyr::filter(metadata, Replicate == "V4", Nucleic_acid == "DNA")$Sample_name
+V4_RNA_samples <- dplyr::filter(metadata, Replicate == "V4", Nucleic_acid == "RNA")$Sample_name
+V5_DNA_samples <- dplyr::filter(metadata, Replicate == "V5", Nucleic_acid == "DNA")$Sample_name
+V5_RNA_samples <- dplyr::filter(metadata, Replicate == "V5", Nucleic_acid == "RNA")$Sample_name
 
-V4_gDNA_samples <- dplyr::filter(metadata, Replicate == "V4", Nucleic_acid == "gDNA")$Sample_name
-V4_cDNA_samples <- dplyr::filter(metadata, Replicate == "V4", Nucleic_acid == "cDNA")$Sample_name
-V5_gDNA_samples <- dplyr::filter(metadata, Replicate == "V5", Nucleic_acid == "gDNA")$Sample_name
-V5_cDNA_samples <- dplyr::filter(metadata, Replicate == "V5", Nucleic_acid == "cDNA")$Sample_name
-
-gDNA_samples <- dplyr::filter(metadata, Nucleic_acid == "gDNA")$Sample_name
-cDNA_samples <- dplyr::filter(metadata, Nucleic_acid == "cDNA")$Sample_name
+DNA_samples <- dplyr::filter(metadata, Nucleic_acid == "DNA")$Sample_name
+RNA_samples <- dplyr::filter(metadata, Nucleic_acid == "RNA")$Sample_name
 
 
 amp.prop.plot$Color <- "ASD1k"
@@ -945,45 +957,46 @@ rownames(amp.prop_summary) <- NULL
 #head(amp.prop_summary)
 
 
-amp.prop_summary$Mean_gDNA <- rowMeans(amp.prop.plot[,gDNA_samples])
-amp.prop_summary$Mean_cDNA <- rowMeans(amp.prop.plot[,cDNA_samples])
-amp.prop_summary$Mean_gDNA_V4 <- rowMeans(amp.prop.plot[,V4_gDNA_samples])
-amp.prop_summary$Mean_cDNA_V4 <- rowMeans(amp.prop.plot[,V4_cDNA_samples])
-amp.prop_summary$Mean_gDNA_V5 <- rowMeans(amp.prop.plot[,V5_gDNA_samples])
-amp.prop_summary$Mean_cDNA_V5 <- rowMeans(amp.prop.plot[,V5_cDNA_samples])
+amp.prop_summary$Mean_DNA <- rowMeans(amp.prop.plot[,DNA_samples])
+amp.prop_summary$Mean_RNA <- rowMeans(amp.prop.plot[,RNA_samples])
+amp.prop_summary$Mean_DNA_V4 <- rowMeans(amp.prop.plot[,V4_DNA_samples])
+amp.prop_summary$Mean_RNA_V4 <- rowMeans(amp.prop.plot[,V4_RNA_samples])
+amp.prop_summary$Mean_DNA_V5 <- rowMeans(amp.prop.plot[,V5_DNA_samples])
+amp.prop_summary$Mean_RNA_V5 <- rowMeans(amp.prop.plot[,V5_RNA_samples])
 
-amp.prop_summary$SD_gDNA <- rowSds(amp.prop.plot[,gDNA_samples])
-amp.prop_summary$SD_cDNA <- as.numeric(rowSds(amp.prop.plot[,cDNA_samples]))
-amp.prop_summary$SD_gDNA_V4 <- as.numeric(rowSds(amp.prop.plot[,V4_gDNA_samples]))
-amp.prop_summary$SD_cDNA_V4 <- as.numeric(rowSds(amp.prop.plot[,V4_cDNA_samples]))
-amp.prop_summary$SD_gDNA_V5 <- as.numeric(rowSds(amp.prop.plot[,V5_gDNA_samples]))
-amp.prop_summary$SD_cDNA_V5 <- as.numeric(rowSds(amp.prop.plot[,V5_cDNA_samples]))
+amp.prop_summary$SD_DNA <- rowSds(amp.prop.plot[,DNA_samples])
+amp.prop_summary$SD_RNA <- as.numeric(rowSds(amp.prop.plot[,RNA_samples]))
+amp.prop_summary$SD_DNA_V4 <- as.numeric(rowSds(amp.prop.plot[,V4_DNA_samples]))
+amp.prop_summary$SD_RNA_V4 <- as.numeric(rowSds(amp.prop.plot[,V4_RNA_samples]))
+amp.prop_summary$SD_DNA_V5 <- as.numeric(rowSds(amp.prop.plot[,V5_DNA_samples]))
+amp.prop_summary$SD_RNA_V5 <- as.numeric(rowSds(amp.prop.plot[,V5_RNA_samples]))
 
 
 # Applying a threshold on proportions
-amp.prop_summary$Pass_prop_gDNA_and_cDNA <- ifelse(amp.prop_summary$Mean_gDNA > 2^-15 & 
-                                                     amp.prop_summary$Mean_cDNA > 2^-15, TRUE, FALSE)
+amp.prop_summary$Pass_prop_DNA_and_RNA <- ifelse(amp.prop_summary$Mean_DNA > 2^-15 & 
+                                                     amp.prop_summary$Mean_RNA > 2^-15, TRUE, FALSE)
 
 
+## Work zone
 ## Add Boolean columns denoting min count tests
  min_count = 100
- min_count_gDNA <- rowSums(data.merge[,gDNA_samples]>min_count) >= ncol(data.merge[,gDNA_samples])
- min_count_gDNA_V4 <- rowSums(data.merge[,V4_gDNA_samples]>min_count) >= ncol(data.merge[,V4_gDNA_samples])
- min_count_gDNA_V5 <- rowSums(data.merge[,V5_gDNA_samples]>min_count) >= ncol(data.merge[,V5_gDNA_samples])
+ min_count_DNA <- rowSums(data.merge_ASD1k[,DNA_samples]>min_count) >= ncol(data.merge_ASD1k[,DNA_samples])
+ min_count_DNA_V4 <- rowSums(data.merge_ASD1k[,V4_DNA_samples]>min_count) >= ncol(data.merge_ASD1k[,V4_DNA_samples])
+ min_count_DNA_V5 <- rowSums(data.merge_ASD1k[,V5_DNA_samples]>min_count) >= ncol(data.merge_ASD1k[,V5_DNA_samples])
  
- min_count_cDNA <- rowSums(data.merge[,cDNA_samples]>min_count) >= ncol(data.merge[,cDNA_samples])
- min_count_cDNA_V4 <- rowSums(data.merge[,V4_cDNA_samples]>min_count) >= ncol(data.merge[,V4_cDNA_samples])
- min_count_cDNA_V5 <- rowSums(data.merge[,V5_cDNA_samples]>min_count) >= ncol(data.merge[,V5_cDNA_samples])
+ min_count_RNA <- rowSums(data.merge_ASD1k[,RNA_samples]>min_count) >= ncol(data.merge_ASD1k[,RNA_samples])
+ min_count_RNA_V4 <- rowSums(data.merge_ASD1k[,V4_RNA_samples]>min_count) >= ncol(data.merge_ASD1k[,V4_RNA_samples])
+ min_count_RNA_V5 <- rowSums(data.merge_ASD1k[,V5_RNA_samples]>min_count) >= ncol(data.merge_ASD1k[,V5_RNA_samples])
  
  count_Booleans <- data.frame(
-   "Amplicon" = data.merge$Amplicon,
-   "min_count_gDNA" = min_count_gDNA,
-   "min_count_gDNA_V4" = min_count_gDNA_V4,
-   "min_count_gDNA_V5" =  min_count_gDNA_V5,
+   "Amplicon" = data.merge_ASD1k$Amplicon,
+   "min_count_DNA" = min_count_DNA,
+   "min_count_DNA_V4" = min_count_DNA_V4,
+   "min_count_DNA_V5" =  min_count_DNA_V5,
    
-   "min_count_cDNA" = min_count_cDNA,
-   "min_count_cDNA_V4" = min_count_cDNA_V4,
-   "min_count_cDNA_V5" =  min_count_cDNA_V5
+   "min_count_RNA" = min_count_RNA,
+   "min_count_RNA_V4" = min_count_RNA_V4,
+   "min_count_RNA_V5" =  min_count_RNA_V5
  )
 
  
@@ -1005,11 +1018,11 @@ library(ggpmisc)
 d=data.frame(x1=c(-Inf, -Inf), x2=c(+Inf, -15), y1=c(-Inf,-15), y2=c(-15, +Inf))
 
 
-# Passing min gDNA counts on all samples
+# Passing min DNA counts on all samples
 p1 <- ggplot()+
-  geom_point(data = y_ASD1k, aes(x = log2(Mean_gDNA), 
-                                 y = log2(Mean_cDNA), 
-                                 color = min_count_gDNA), alpha = 0.3)+
+  geom_point(data = y_ASD1k, aes(x = log2(Mean_DNA), 
+                                 y = log2(Mean_RNA), 
+                                 color = min_count_DNA), alpha = 0.3)+
   theme_bw()+
   geom_rect(data=d, mapping=aes(xmin=x1, xmax=x2, ymin=y1, ymax=y2), color=NA, alpha=0.3)+
   labs(title = "Amplicons with > 100 counts in all DNA")+
@@ -1018,8 +1031,8 @@ p1 <- ggplot()+
 
 
 p2 <- ggplot()+
-  geom_point(data = y_ASD1k, aes(x = log2(Mean_gDNA), y = log2(Mean_cDNA), 
-                                 color = min_count_gDNA_V4), alpha = 0.3)+
+  geom_point(data = y_ASD1k, aes(x = log2(Mean_DNA), y = log2(Mean_RNA), 
+                                 color = min_count_DNA_V4), alpha = 0.3)+
   theme_bw()+
   geom_rect(data=d, mapping=aes(xmin=x1, xmax=x2, ymin=y1, ymax=y2), color=NA, alpha=0.3)+
   labs(title = "Amplicons with > 100 counts in V4 replicate DNA")+
@@ -1029,8 +1042,8 @@ p2 <- ggplot()+
 
 
 p3 <- ggplot()+
-  geom_point(data = y_ASD1k, aes(x = log2(Mean_gDNA), y = log2(Mean_cDNA), 
-                                 color = min_count_gDNA_V5), alpha = 0.3)+
+  geom_point(data = y_ASD1k, aes(x = log2(Mean_DNA), y = log2(Mean_RNA), 
+                                 color = min_count_DNA_V5), alpha = 0.3)+
   theme_bw()+
   geom_rect(data=d, mapping=aes(xmin=x1, xmax=x2, ymin=y1, ymax=y2), color=NA, alpha=0.3)+
   labs(title = "Amplicons with > 100 counts in V5 replicate DNA")+
@@ -1041,13 +1054,13 @@ p3 <- ggplot()+
 
 
 
-# Passing min gDNA counts on all samples
-y$min_count_gDNA_and_cDNA <- y$min_count_cDNA & y$min_count_gDNA
-y_ASD1k$min_count_gDNA_and_cDNA <- y_ASD1k$min_count_cDNA & y_ASD1k$min_count_gDNA
+# Passing min DNA counts on all samples
+y$min_count_DNA_and_RNA <- y$min_count_RNA & y$min_count_DNA
+y_ASD1k$min_count_DNA_and_RNA <- y_ASD1k$min_count_RNA & y_ASD1k$min_count_DNA
 
 p4 <- ggplot()+
-  geom_point(data = y_ASD1k, aes(x = log2(Mean_gDNA), y = log2(Mean_cDNA), 
-                                 color = min_count_gDNA_and_cDNA), alpha = 0.3)+
+  geom_point(data = y_ASD1k, aes(x = log2(Mean_DNA), y = log2(Mean_RNA), 
+                                 color = min_count_DNA_and_RNA), alpha = 0.3)+
   theme_bw()+
   geom_rect(data=d, mapping=aes(xmin=x1, xmax=x2, ymin=y1, ymax=y2), color=NA, alpha=0.3)+
   labs(title = "Amplicons with > 100 counts in DNA and RNA samples")+
@@ -1066,14 +1079,14 @@ plot_grid(p1, p2, p3, p4,
 ```{r, fig.width = 12, fig.height = 6}
 ### Dataset for lm ###
 # Filtering criteria:
-#  1. > 100 reads across all gDNA samples, and > 100 across all cDNA samples
-#  2. Mean gDNA proportions and mean cDNA proportions > 2^-15
+#  1. > 100 reads across all DNA samples, and > 100 across all RNA samples
+#  2. Mean DNA proportions and mean RNA proportions > 2^-15
 
-y$lm_dataset <- y$min_count_gDNA_and_cDNA & y$Pass_prop_gDNA_and_cDNA
-y_ASD1k$lm_dataset <- y_ASD1k$min_count_gDNA_and_cDNA & y_ASD1k$Pass_prop_gDNA_and_cDNA
+y$lm_dataset <- y$min_count_DNA_and_RNA & y$Pass_prop_DNA_and_RNA
+y_ASD1k$lm_dataset <- y_ASD1k$min_count_DNA_and_RNA & y_ASD1k$Pass_prop_DNA_and_RNA
 
 p1 <- ggplot()+
-  geom_point(data = y_ASD1k, aes(x = log2(Mean_gDNA), y = log2(Mean_cDNA), color = lm_dataset), alpha = 0.3)+
+  geom_point(data = y_ASD1k, aes(x = log2(Mean_DNA), y = log2(Mean_RNA), color = lm_dataset), alpha = 0.3)+
   theme_bw()+
   geom_rect(data=d, mapping=aes(xmin=x1, xmax=x2, ymin=y1, ymax=y2), color=NA, alpha=0.3)+
   labs(title = "Dataset cleaning for building the lm model")+
@@ -1087,7 +1100,7 @@ y_ASD1k_lm <- dplyr::filter(y_ASD1k, lm_dataset == TRUE)
 
 formula <- y ~ x
 
-p2 <- ggplot(y_ASD1k_lm, aes(x = log2(Mean_gDNA), y = log2(Mean_cDNA)))+
+p2 <- ggplot(y_ASD1k_lm, aes(x = log2(Mean_DNA), y = log2(Mean_RNA)))+
   geom_point(alpha = 0.3)+
   theme_bw()+
   geom_abline(intercept = 0, color = "red", linetype = 2)+
@@ -1144,7 +1157,7 @@ y_ASD1k_lm_GC$GC_ab_mean <- ifelse(y_ASD1k_lm_GC$GC_content > mean(na.omit(y_ASD
 # na.omit(y_ASD1k_lm_GC)  - the same, just simpler
 
 ggplot(na.omit(y_ASD1k_lm_GC), 
-       aes(x = log2(Mean_gDNA), y = log2(Mean_cDNA), 
+       aes(x = log2(Mean_DNA), y = log2(Mean_RNA), 
            color = GC_content))+
   geom_point(alpha = 0.5)+
   theme_bw()+
@@ -1167,9 +1180,9 @@ ggplot(na.omit(y_ASD1k_lm_GC),
 
 # data.all$MeanRatio_MoM <- data.all$RNA_prop_mean / data.all$DNA_prop_mean
 
-y_ASD1k_lm_GC$MeanRatio_All <- y_ASD1k_lm_GC$Mean_cDNA / y_ASD1k_lm_GC$Mean_gDNA
-y_ASD1k_lm_GC$MeanRatio_V4 <- y_ASD1k_lm_GC$Mean_cDNA_V4/ y_ASD1k_lm_GC$Mean_gDNA_V4
-y_ASD1k_lm_GC$MeanRatio_V5 <- y_ASD1k_lm_GC$Mean_cDNA_V5/ y_ASD1k_lm_GC$Mean_gDNA_V5    
+y_ASD1k_lm_GC$MeanRatio_All <- y_ASD1k_lm_GC$Mean_RNA / y_ASD1k_lm_GC$Mean_DNA
+y_ASD1k_lm_GC$MeanRatio_V4 <- y_ASD1k_lm_GC$Mean_RNA_V4/ y_ASD1k_lm_GC$Mean_DNA_V4
+y_ASD1k_lm_GC$MeanRatio_V5 <- y_ASD1k_lm_GC$Mean_RNA_V5/ y_ASD1k_lm_GC$Mean_DNA_V5    
 
 
 formula <- y ~ x
@@ -1200,13 +1213,13 @@ plot_grid(GC_cont_plot("MeanRatio_All", "V4 + V5 combined"),
 ## 5.2 GC content impact on amp. act.
 ```{r, cache=FALSE}
 
-lm_all_GC <- lm(log2(Mean_cDNA) ~ log2(Mean_gDNA) + GC_content, data = y_ASD1k_lm_GC)
-lm_V4_GC <- lm(log2(Mean_cDNA_V4) ~ log2(Mean_gDNA_V4) + GC_content, data = y_ASD1k_lm_GC) 
-lm_V5_GC <- lm(log2(Mean_cDNA_V5) ~ log2(Mean_gDNA_V5) + GC_content, data = y_ASD1k_lm_GC)  
+lm_all_GC <- lm(log2(Mean_RNA) ~ log2(Mean_DNA) + GC_content, data = y_ASD1k_lm_GC)
+lm_V4_GC <- lm(log2(Mean_RNA_V4) ~ log2(Mean_DNA_V4) + GC_content, data = y_ASD1k_lm_GC) 
+lm_V5_GC <- lm(log2(Mean_RNA_V5) ~ log2(Mean_DNA_V5) + GC_content, data = y_ASD1k_lm_GC)  
 
-lm_all <- lm(log2(Mean_cDNA) ~ log2(Mean_gDNA), data = y_ASD1k_lm_GC)
-lm_V4 <- lm(log2(Mean_cDNA_V4) ~ log2(Mean_gDNA_V4), data = y_ASD1k_lm_GC) 
-lm_V5 <- lm(log2(Mean_cDNA_V5) ~ log2(Mean_gDNA_V5), data = y_ASD1k_lm_GC)  
+lm_all <- lm(log2(Mean_RNA) ~ log2(Mean_DNA), data = y_ASD1k_lm_GC)
+lm_V4 <- lm(log2(Mean_RNA_V4) ~ log2(Mean_DNA_V4), data = y_ASD1k_lm_GC) 
+lm_V5 <- lm(log2(Mean_RNA_V5) ~ log2(Mean_DNA_V5), data = y_ASD1k_lm_GC)  
 
 # Add AIC and BIC
 lm_all_GC$AIC <- round(AIC(lm_all_GC), 1)
