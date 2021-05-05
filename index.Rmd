@@ -41,7 +41,8 @@ knitr::opts_chunk$set(message=FALSE,
                       echo=TRUE, 
                       cache=FALSE, 
                       fig.width = 7, fig.height = 6, 
-                      fig.align = 'left')
+                      fig.align = 'left',
+                      dev.args = list(png = list(type = "cairo")))
 ```
 
 ```{r setup, echo=FALSE}
@@ -1339,5 +1340,138 @@ plot_grid(p1, p2, p3,
           labels = c("A", "B", "C"), 
           vjust = 0.9)
 
+#save.image("G:/Shared drives/Nord Lab - Computational Projects/MPRA/ASD1k/Session_05_05_2021.RData")
+#load("G:/Shared drives/Nord Lab - Computational Projects/MPRA/ASD1k/Session_05_05_2021.RData")
+```
+
+# 6. Selection of candidates for validation
+
+## 6.1 P values from lm
+```{r}
+ 
+# Calculated p values based on residuals from lm including GC. 
+# I'm not using the combined model due to opposite GC bias in V4 and V5 repliocates
+
+y_ASD1k_lm_GC$p_V4  <- pnorm(y_ASD1k_lm_GC$V4_res_GC, lower.tail = FALSE)
+y_ASD1k_lm_GC$p_V5  <- pnorm(y_ASD1k_lm_GC$V5_res_GC, lower.tail = FALSE)
+
+y_ASD1k_lm_GC$Sig <- ifelse(y_ASD1k_lm_GC$p_V4 < 0.05, "In V4", "Non-significant")
+y_ASD1k_lm_GC$Sig <- ifelse(y_ASD1k_lm_GC$p_V5 < 0.05, "In V5", y_ASD1k_lm_GC$Sig)
+y_ASD1k_lm_GC$Sig <- ifelse(y_ASD1k_lm_GC$p_V4 < 0.05 & y_ASD1k_lm_GC$p_V5 < 0.05, "In V4 & V5", y_ASD1k_lm_GC$Sig)
+
+
+p <- ggplot(y_ASD1k_lm_GC, aes(x = log2(Mean_DNA), y = log2(Mean_RNA), color = Sig, label = Amplicon))+
+  geom_point(alpha = 0.6)+
+  scale_color_manual(values = c("Non-significant" = "grey",
+                               "In V4" = "blue",
+                               "In V5" = "green",
+                               "In V4 & V5" = "red"), name = "P < 0.05")+
+  theme_bw()+
+  labs(title = "There are 21 amplicons passing P<0.05 in V4 and V5")+
+  theme(plot.title = element_text(hjust = 0.5))
+
+
+ggplotly(p)  
+
+###
+candidates <- dplyr::filter(y_ASD1k_lm_GC, Sig == "In V4 & V5")
+
+
+```
+
+## 6.2 Variation in the data
+```{r, fig.width = 13}
+
+### Minimize variance among candidates
+df <- merge(candidates, amp.act_summary, by.x = "Amplicon", by.y = "amp_id")
+
+p1 <- ggplot(df, aes(x = MeanRatio_All, y = log2(SD_All), label = Amplicon))+
+  geom_point(color = "navy")+
+  theme_bw()+
+  geom_hline(yintercept = 0)+
+  labs(title = "Ratiometric act. of V4 & V5 vs log2(act. SD)", x = "Ratiometric activity (V4 & V5)")+
+  geom_text_repel(size = 2)+
+  theme(plot.title = element_text(hjust = 0.5))
+
+p2 <- ggplot(df, aes(x = MeanRatio_V4, y = log2(SD_V4), label = Amplicon))+
+  geom_point(color = "navy")+
+  theme_bw()+
+  geom_hline(yintercept = 0)+
+  labs(title = "Ratiometric act. of V4 vs log2(act. SD)", x = "Ratiometric activity (V4)")+
+  geom_text_repel(size = 2)+
+  theme(plot.title = element_text(hjust = 0.5))
+
+p3 <- ggplot(df, aes(x = MeanRatio_V5, y = log2(SD_V5), label = Amplicon))+
+  geom_point(color = "navy")+
+  theme_bw()+
+  geom_hline(yintercept = 0)+
+  labs(title = "Ratiometric act. of V5 vs log2(act. SD)", x = "Ratiometric activity (V5)")+
+  geom_text_repel(size = 2)+
+  theme(plot.title = element_text(hjust = 0.5))
+
+
+plot_grid(p1, p2, p3, nrow = 1) 
+
+df$SD_act_b1 <- ifelse(df$SD_V4 < 1, "SD < 1 in V4", "SD > 1")
+df$SD_act_b1 <- ifelse(df$SD_V5 < 1, "SD < 1 in V5", df$SD_act_b1)
+df$SD_act_b1 <- ifelse(df$SD_V5 < 1 & df$SD_V4 < 1, "SD < 1 in V4 & V5", df$SD_act_b1)
+
+
+```
+
+```{r, fig.width=10, fig.height=8}
+### Barplot  ###
+
+amp.act_total <- merge(amp.act, amp.act_summary, by = "amp_id")
+amp.act_total$Color.y <- NULL
+amp.act_total$Color.x <- NULL
+
+amp.act$Color <- NULL
+
+
+#y_ASD1k_lm_GC <- y_ASD1k_lm_GC[order(y_ASD1k_lm_GC$MeanRatio_All, decreasing = F),]
+#y_ASD1k_lm_GC$Amplicon <- factor(y_ASD1k_lm_GC$Amplicon, levels = y_ASD1k_lm_GC$Amplicon)
+
+#y_ASD1k_lm_GC <- arrange(y_ASD1k_lm_GC, Act_Rank_All)
+
+amp.act_candidates <- dplyr::filter(amp.act, amp_id %in% candidates$Amplicon)
+amp.act_candidates_m <- melt(data.table(amp.act_candidates), id.var = c("amp_id"))
+amp.act_candidates_m$amp_id <- factor(amp.act_candidates_m$amp_id, levels = candidates$Amplicon)
+
+amp.act_candidates_m$replicate <- ifelse(grepl("V5", amp.act_candidates_m$variable), "V5", "V4")
+
+candidates <- merge(candidates, df[,c("Amplicon", "SD_act_b1")])
+candidates <- arrange(candidates, MeanRatio_All)
+candidates$Amplicon <- factor(candidates$Amplicon, levels = candidates$Amplicon)
+
+ggplot()+
+  geom_bar(data = candidates, aes(x = Amplicon, y = MeanRatio_All, fill = SD_act_b1), stat = "identity")+
+  theme_bw()+
+  geom_jitter(data = amp.act_candidates_m, aes(x = amp_id, y = value, color = replicate), 
+              width = 0.25, alpha = 0.7)+
+  theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 1),
+        plot.title = element_text(hjust = 0.5))+
+  labs(title = "21 amplicons with the highest residual activity in V4 and V5", x="")+
+  scale_fill_manual(values = c("SD > 1" = "grey",
+                               "SD < 1 in V4" = "blue",
+                               "SD < 1 in V5" = "green",
+                               "SD < 1 in V4 & V5" = "red"), name = "Ratiometric act. SD")
+
+
+```
+
+```{r}
+p <- ggplot(candidates, aes(x = log2(Mean_DNA), y = log2(Mean_RNA), color = SD_act_b1, label = Amplicon))+
+  geom_point(alpha = 0.6)+
+ scale_color_manual(values = c("SD > 1" = "grey",
+                               "SD < 1 in V4" = "blue",
+                               "SD < 1 in V5" = "green",
+                               "SD < 1 in V4 & V5" = "red"), name = "Ratiometric act. SD")+
+  theme_bw()+
+  labs(title = "There are 21 amplicons passing P<0.05 in V4 and V5")+
+  theme(plot.title = element_text(hjust = 0.5))
+
+
+ggplotly(p)  
 
 ```
